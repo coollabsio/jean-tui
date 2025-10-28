@@ -249,9 +249,14 @@ func (m Model) deleteWorktree(path, branch string, force bool) tea.Cmd {
 			return worktreeDeletedMsg{err: err}
 		}
 
-		// Then kill the associated tmux session if it exists
+		// Then kill the associated tmux sessions if they exist
+		// Kill Claude session
 		sessionName := m.sessionManager.SanitizeName(branch)
 		_ = m.sessionManager.Kill(sessionName) // Ignore error if session doesn't exist
+
+		// Kill terminal-only session (if it exists)
+		terminalSessionName := m.sessionManager.SanitizeNameTerminal(branch)
+		_ = m.sessionManager.Kill(terminalSessionName) // Ignore error if session doesn't exist
 
 		return worktreeDeletedMsg{err: nil}
 	}

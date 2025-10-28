@@ -63,8 +63,8 @@ gcool() {
                 return
             fi
 
-            # Check if session exists
-            if tmux has-session -t "$session_name" 2>/dev/null; then
+            # Check if session exists (use exact matching with =)
+            if tmux has-session -t "=$session_name" 2>/dev/null; then
                 # Attach to existing session
                 tmux attach-session -t "$session_name"
                 # After detaching, loop back to gcool

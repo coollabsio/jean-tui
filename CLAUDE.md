@@ -110,14 +110,22 @@ Tmux integration:
 - `KillSession()`: Terminate a tmux session
 - `SessionExists()`: Check if session is running
 - `SanitizeSessionName()`: Convert branch names to valid tmux session names
+- `HasGcoolTmuxConfig()`: Check if gcool config is installed in ~/.tmux.conf
+- `AddGcoolTmuxConfig()`: Install or update gcool tmux config (with unique markers)
+- `RemoveGcoolTmuxConfig()`: Remove gcool config section from ~/.tmux.conf
 
 #### config/config.go
 Configuration management:
 - `Config` struct: Stores repository-specific settings
+- `RepoConfig` struct: Base branch, editor, last selected branch
 - `LoadConfig()`: Read from `~/.config/gcool/config.json`
 - `SaveConfig()`: Persist configuration changes
 - `GetBaseBranch()`: Get base branch for repository
 - `SetBaseBranch()`: Update base branch setting
+- `GetEditor()`: Get preferred editor for repository (defaults to "code")
+- `SetEditor()`: Update editor preference
+- `GetLastSelectedBranch()`: Get last selected branch for auto-restore
+- `SetLastSelectedBranch()`: Save last selected branch
 
 ### Key Architectural Patterns
 
@@ -139,31 +147,72 @@ Configuration management:
 **Modal Management**: The TUI uses a modal system (`modalType` enum) for different operations:
 - `createModal`: Create new worktree with new branch
 - `deleteModal`: Confirm worktree deletion
-- `branchSelectModal`: Select existing branch for worktree
+- `branchSelectModal`: Select existing branch for worktree (with search/filter)
 - `sessionListModal`: View and manage tmux sessions
 - `renameModal`: Rename current branch
-- `changeBaseBranchModal`: Change base branch for new worktrees
+- `changeBaseBranchModal`: Change base branch for new worktrees (with search/filter)
+- `editorSelectModal`: Select preferred editor for opening worktrees
+- `settingsModal`: Configure application settings
+- `tmuxConfigModal`: Install/update/remove tmux configuration
 
 **Session Naming**: Tmux session names are sanitized from branch names:
-- Prefix: `gcool-`
+- Claude sessions: `gcool-<sanitized-branch-name>`
+- Terminal sessions: `gcool-<sanitized-branch-name>-terminal`
 - Invalid characters replaced with hyphens
-- Format: `gcool-<sanitized-branch-name>`
+- Both session types can coexist for the same worktree
 
 **Worktree Organization**: All worktrees are created in `.workspaces/` directory at repository root:
 - Random names generated from adjectives + nouns + numbers (e.g., `happy-panda-42`)
 - Keeps workspace organized and prevents directory conflicts
 
+**Search/Filter Pattern**: Branch selection modals use a consistent search pattern:
+- `searchInput` textinput for typing filter queries
+- `filteredBranches` slice stores filtered results
+- `filterBranches()` helper method performs case-insensitive substring matching
+- Real-time filtering as user types
+- Focus management: search input → list → buttons (via Tab)
+- Used in: branchSelectModal, checkoutBranchModal, changeBaseBranchModal
+
 ## Configuration
 
 **User Config Location**: `~/.config/gcool/config.json`
-- Stores base branch per repository
-- JSON structure: `{"repositories": {"<repo-path>": {"base_branch": "main"}}}`
+- Stores per-repository settings: base branch, editor preference, last selected branch
+- JSON structure:
+```json
+{
+  "repositories": {
+    "<repo-path>": {
+      "base_branch": "main",
+      "editor": "code",
+      "last_selected_branch": "feature/my-branch"
+    }
+  }
+}
+```
 
 **Base Branch Logic**:
 1. Check saved config for repository
 2. Fall back to current branch
 3. Fall back to default branch (main/master)
 4. Fall back to empty string (user must set manually)
+
+**Editor Integration**:
+- Supports 7 popular editors: code, cursor, nvim, vim, subl, atom, zed
+- Press `o` to open worktree in configured editor
+- Press `e` to select/change editor (also accessible via settings menu)
+- Editor preference stored per repository
+
+**Last Selected Worktree Persistence**:
+- Automatically saves last selected worktree branch
+- Restores selection when reopening gcool
+- Updates on navigation (up/down keys) and switching
+
+**Tmux Configuration Management**:
+- Opinionated tmux config can be installed to `~/.tmux.conf`
+- Config is marked with unique identifiers for safe updates/removal
+- Includes: mouse support, Ctrl-D detach, 10k scrollback, 256 colors
+- Accessible via settings menu → Tmux Config
+- Supports install, update, and remove operations
 
 ## Dependencies
 
@@ -174,18 +223,71 @@ Key external dependencies:
 
 ## Extension Points
 
-### Potential Feature Additions
+### Implemented Features
 
-**Editor Integration**:
-- Add keybinding (e.g., `o`) to open worktree in default IDE
-- Detect editor from `$EDITOR` environment variable
-- Support multiple editors: VSCode (`code`), Cursor (`cursor`), Neovim (`nvim`), Vim (`vim`)
-- Configuration option to set preferred editor per repository
+**Editor Integration** ✅:
+- `o` keybinding to open worktree in default IDE
+- `e` keybinding to select/change editor
+- Support for 7 editors: VS Code, Cursor, Neovim, Vim, Sublime Text, Atom, Zed
+- Per-repository editor preference stored in `~/.config/gcool/config.json`
 
-**Enhanced Configuration**:
-- Store editor preferences in `~/.config/gcool/config.json`
-- Per-repository settings: default branch naming scheme, preferred editor, tmux preferences
-- Global defaults with repository overrides
+**Enhanced Configuration** ✅:
+- Settings menu (`s` keybinding) for centralized configuration
+- Editor preferences stored per repository
+- Base branch configuration per repository
+- Last selected worktree persistence
+- Tmux configuration management (install/update/remove)
+
+**Branch Management** ✅:
+- Branch rename protection (prevents renaming main branch)
+- Search/filter for branch selection modals
+
+**Automatic Base Branch Update Detection** ⚠️ (NOT YET TESTED):
+- Periodic checks every 10 seconds (configurable) for base branch updates
+- Automatically fetches from remote without user intervention
+- Displays visual indicators showing which worktrees are behind base branch
+- Behind count displayed as `↓X` next to worktree names (e.g., `↓3` for 3 commits behind)
+- Shows ahead/behind status in the details panel
+- Per-repository configurable fetch interval (5s/10s/30s/60s) in `~/.config/gcool/config.json`
+- **Status**: Implemented but NOT tested - will be tested in follow-up session
+
+**Pull from Base Branch** ⚠️ (NOT YET TESTED):
+- Press `P` (Shift+P) to pull changes from base branch into selected worktree
+- Only available when worktree is behind the base branch (safe mode)
+- Automatically fetches latest changes first, then merges base branch
+- Graceful merge conflict handling with abort option
+- Shows "Merge conflict! Run 'git merge --abort' to abort." message on conflicts
+- Only works on workspace worktrees (in `.workspaces/` directory)
+- **Status**: Implemented but NOT tested - will be tested in follow-up session
+
+### Implementation Details (New Features)
+
+**Files Modified**:
+1. `git/worktree.go`: Added `FetchRemote()`, `GetBranchStatus()`, `MergeBranch()`, `AbortMerge()` methods
+   - Updated `Worktree` struct with `BehindCount`, `AheadCount`, `IsOutdated` fields
+2. `config/config.go`: Added `AutoFetchInterval` field to `RepoConfig`
+   - Added `GetAutoFetchInterval()` and `SetAutoFetchInterval()` methods
+3. `tui/model.go`: Added periodic check scheduling and branch status tracking
+   - Added `lastFetchTime`, `fetchInterval` fields to `Model`
+   - Added `scheduleBranchCheck()`, `checkBranchStatuses()`, `pullFromBaseBranch()` commands
+   - Added `tickMsg`, `branchStatusCheckedMsg`, `branchPulledMsg` message types
+4. `tui/update.go`: Added event handlers for periodic checks and pull operations
+   - Added `P` keybinding for pulling from base branch
+   - Handlers for `tickMsg`, `branchStatusCheckedMsg`, `branchPulledMsg`
+5. `tui/view.go`: Updated UI to show branch status
+   - Worktree list shows `↓X` indicator for behind count
+   - Details panel shows ahead/behind status with pull hint
+   - Help bar dynamically shows "P pull" when applicable
+6. `tui/styles.go`: Added `successColor` for up-to-date status display
+
+**Architecture Notes**:
+- Uses Bubble Tea's `tea.Every()` for periodic tick messages (every 10s by default)
+- Fetch operations are non-blocking - failures don't interrupt user workflow
+- Status checks only run if enough time has passed (configurable interval)
+- Branch status is cached per worktree and updated on periodic checks
+- Pull operation is gated on safety checks (only workspace branches, only when behind)
+
+### Potential Future Additions
 
 **Worktree Management**:
 - Bulk operations: Delete multiple worktrees at once
@@ -266,23 +368,28 @@ All keybindings are defined in `tui/update.go`. The application uses Bubble Tea'
 **Navigation**:
 - `↑`, `k` - Move cursor up
 - `↓`, `j` - Move cursor down
-- `enter`, `space` - Switch to selected worktree (with Claude)
+- `enter` - Switch to selected worktree (with Claude)
 - `t` - Open terminal in worktree (without Claude)
 
 **Worktree Management**:
-- `n` - Create new worktree with random branch name
+- `n` - Create new worktree with random branch name (selects it but doesn't switch)
 - `a` - Create worktree from existing branch
-- `d`, `x` - Delete selected worktree
+- `d` - Delete selected worktree
 - `r` - Refresh worktree list
 
 **Branch Operations**:
 - `R` (Shift+R) - Rename current branch
 - `C` (Shift+C) - Checkout/switch branch in main repository
 - `c` - Change base branch for new worktrees
+- `P` (Shift+P) - Pull changes from base branch (only when behind) ⚠️ NOT YET TESTED
+- `p` (lowercase) - Create draft PR
 
 **Application**:
 - `q`, `ctrl+c` - Quit application
-- `s` - View/manage tmux sessions
+- `s` - Open settings menu
+- `S` (Shift+S) - View/manage tmux sessions
+- `e` - Select/change default editor
+- `o` - Open worktree in configured editor
 
 ### Modal Keybindings
 
@@ -294,11 +401,14 @@ All modals support:
 Specific modal handlers are implemented in `tui/update.go`:
 - `handleCreateModalInput()` - Create worktree modal
 - `handleDeleteModalInput()` - Deletion confirmation
-- `handleBranchSelectModalInput()` - Branch selection (uses `↑`/`↓` navigation)
-- `handleCheckoutBranchModalInput()` - Checkout modal (uses `↑`/`↓` navigation)
+- `handleBranchSelectModalInput()` - Branch selection with search/filter (supports typing to filter)
+- `handleCheckoutBranchModalInput()` - Checkout modal with search/filter
 - `handleSessionListModalInput()` - Session list (uses `↑`/`↓`, `k` to kill sessions)
-- `handleRenameModalInput()` - Rename modal (text input)
-- `handleChangeBaseBranchModalInput()` - Base branch modal (uses `↑`/`↓` navigation)
+- `handleRenameModalInput()` - Branch rename modal (text input, prevents renaming main branch)
+- `handleChangeBaseBranchModalInput()` - Base branch modal with search/filter
+- `handleEditorSelectModalInput()` - Editor selection modal (uses `↑`/`↓` navigation)
+- `handleSettingsModalInput()` - Settings menu navigation
+- `handleTmuxConfigModalInput()` - Tmux config install/update/remove
 
 ## Common Patterns
 

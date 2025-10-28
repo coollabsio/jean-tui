@@ -69,10 +69,20 @@ func (m Model) renderWorktreeList() string {
 		var style lipgloss.Style
 		icon := "  "
 
+		// Check if this item is selected
+		isSelected := i == m.selectedIndex
+
 		if wt.IsCurrent {
-			style = currentWorktreeStyle
-			icon = "➜ "
-		} else if i == m.selectedIndex {
+			if isSelected {
+				// Current worktree AND selected - use selected style with current icon
+				style = selectedItemStyle
+				icon = "➜ "
+			} else {
+				// Current worktree but not selected
+				style = currentWorktreeStyle
+				icon = "➜ "
+			}
+		} else if isSelected {
 			style = selectedItemStyle
 			icon = "› "
 		} else {
@@ -94,6 +104,12 @@ func (m Model) renderWorktreeList() string {
 			line = fmt.Sprintf("%smain (branch: %s)", icon, branch)
 		} else {
 			line = fmt.Sprintf("%s%s", icon, branch)
+
+			// Show behind count if outdated
+			if wt.IsOutdated && wt.BehindCount > 0 {
+				behindIndicator := fmt.Sprintf(" ↓%d", wt.BehindCount)
+				line += normalItemStyle.Copy().Foreground(warningColor).Render(behindIndicator)
+			}
 		}
 
 		b.WriteString(style.Render(line))
@@ -147,6 +163,35 @@ func (m Model) renderDetails() string {
 		b.WriteString("\n")
 	}
 
+	// Show branch status vs base branch
+	if m.baseBranch != "" && wt.Branch != m.baseBranch && !strings.HasPrefix(wt.Branch, "(detached") {
+		b.WriteString("\n")
+		b.WriteString(detailKeyStyle.Render("Base Branch Status:"))
+		b.WriteString("\n")
+
+		// Show ahead/behind counts
+		if wt.AheadCount > 0 || wt.BehindCount > 0 {
+			statusParts := []string{}
+			if wt.AheadCount > 0 {
+				statusParts = append(statusParts, fmt.Sprintf("↑%d ahead", wt.AheadCount))
+			}
+			if wt.BehindCount > 0 {
+				statusParts = append(statusParts, normalItemStyle.Copy().Foreground(warningColor).Render(fmt.Sprintf("↓%d behind", wt.BehindCount)))
+			}
+			b.WriteString("  " + strings.Join(statusParts, ", "))
+			b.WriteString("\n")
+
+			// Show pull hint if behind
+			if wt.BehindCount > 0 && !wt.IsCurrent && strings.Contains(wt.Path, ".workspaces") {
+				b.WriteString(normalItemStyle.Copy().Foreground(accentColor).Render("  Press 'P' to pull changes from base branch"))
+				b.WriteString("\n")
+			}
+		} else {
+			b.WriteString(normalItemStyle.Copy().Foreground(successColor).Render("  ✓ Up to date"))
+			b.WriteString("\n")
+		}
+	}
+
 	// Add extra info
 	b.WriteString("\n")
 	if wt.IsCurrent {
@@ -175,6 +220,7 @@ func (m Model) renderHelpBar() string {
 		"a existing branch",
 		"o open editor",
 		"t terminal",
+		"p create PR",
 	}
 
 	row2 := []string{
@@ -185,6 +231,11 @@ func (m Model) renderHelpBar() string {
 		"r refresh",
 		"enter switch",
 		"q quit",
+	}
+
+	// Add "P pull" to row1 if selected worktree is behind
+	if wt := m.selectedWorktree(); wt != nil && wt.IsOutdated && wt.BehindCount > 0 && strings.Contains(wt.Path, ".workspaces") {
+		row1 = append(row1, "P pull")
 	}
 
 	help1 := helpStyle.Render(" " + strings.Join(row1, " • ") + " ")
@@ -293,27 +344,84 @@ func (m Model) renderDeleteModal() string {
 	b.WriteString("\n")
 	b.WriteString(detailValueStyle.Render(fmt.Sprintf("  Path: %s", wt.Path)))
 	b.WriteString("\n\n")
-	b.WriteString(errorStyle.Render("This will remove the worktree directory!"))
-	b.WriteString("\n\n")
+
+	// Show warning if there are uncommitted changes
+	if m.deleteHasUncommitted {
+		b.WriteString(errorStyle.Render("⚠️  WARNING: This worktree has uncommitted changes!"))
+		b.WriteString("\n")
+		if m.deleteConfirmForce {
+			b.WriteString(errorStyle.Render("    Confirm force delete below."))
+		} else {
+			b.WriteString(errorStyle.Render("    Use 'Force Delete' to proceed anyway."))
+		}
+		b.WriteString("\n\n")
+	} else {
+		b.WriteString(errorStyle.Render("This will remove the worktree directory!"))
+		b.WriteString("\n\n")
+	}
 
 	// Buttons
-	yesBtn := "Yes, Delete"
-	noBtn := "Cancel"
+	if m.deleteHasUncommitted {
+		// Show 3 buttons: Yes (disabled), Cancel, Force Delete
+		yesBtn := "Yes"
+		noBtn := "Cancel"
+		forceBtn := "Force Delete"
 
-	if m.modalFocused == 0 {
-		b.WriteString(selectedButtonStyle.Copy().Background(errorColor).Render(yesBtn))
+		// Yes button (disabled if uncommitted changes and not confirmed)
+		if m.deleteConfirmForce {
+			if m.modalFocused == 0 {
+				b.WriteString(selectedDeleteButtonStyle.Render(yesBtn))
+			} else {
+				b.WriteString(deleteButtonStyle.Render(yesBtn))
+			}
+		} else {
+			// Disabled state
+			b.WriteString(disabledButtonStyle.Render(yesBtn))
+		}
+		b.WriteString("  ")
+
+		// Cancel button
+		if m.modalFocused == 1 {
+			b.WriteString(selectedButtonStyle.Render(noBtn))
+		} else {
+			b.WriteString(buttonStyle.Render(noBtn))
+		}
+		b.WriteString("  ")
+
+		// Force Delete button
+		if m.modalFocused == 2 {
+			b.WriteString(selectedDeleteButtonStyle.Render(forceBtn))
+		} else {
+			b.WriteString(deleteButtonStyle.Render(forceBtn))
+		}
+
+		b.WriteString("\n\n")
+		if m.deleteConfirmForce {
+			b.WriteString(helpStyle.Render("Enter/Y to confirm force delete • Esc/N to cancel"))
+		} else {
+			b.WriteString(helpStyle.Render("Tab/←→ to switch • F or select Force Delete • Esc/N to cancel"))
+		}
 	} else {
-		b.WriteString(buttonStyle.Copy().Background(errorColor).Render(yesBtn))
-	}
+		// Normal delete (no uncommitted changes)
+		yesBtn := "Yes, Delete"
+		noBtn := "Cancel"
 
-	if m.modalFocused == 1 {
-		b.WriteString(selectedButtonStyle.Render(noBtn))
-	} else {
-		b.WriteString(buttonStyle.Render(noBtn))
-	}
+		if m.modalFocused == 0 {
+			b.WriteString(selectedDeleteButtonStyle.Render(yesBtn))
+		} else {
+			b.WriteString(deleteButtonStyle.Render(yesBtn))
+		}
+		b.WriteString("  ")
 
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Tab/←→ to switch • Enter/Y to confirm • Esc/N to cancel"))
+		if m.modalFocused == 1 {
+			b.WriteString(selectedButtonStyle.Render(noBtn))
+		} else {
+			b.WriteString(buttonStyle.Render(noBtn))
+		}
+
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("Tab/←→ to switch • Enter/Y to confirm • Esc/N to cancel"))
+	}
 
 	return lipgloss.Place(
 		m.width, m.height,
@@ -540,7 +648,7 @@ func (m Model) renderSessionListModal() string {
 		b.WriteString(helpStyle.Render(fmt.Sprintf("Showing %d-%d of %d sessions", start+1, end, len(m.sessions))))
 		b.WriteString("\n\n")
 
-		b.WriteString(helpStyle.Render("↑↓ navigate • Enter attach • x/d kill • Esc close"))
+		b.WriteString(helpStyle.Render("↑↓ navigate • Enter attach • d kill • Esc close"))
 	}
 
 	return lipgloss.Place(

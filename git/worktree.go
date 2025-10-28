@@ -12,10 +12,13 @@ import (
 
 // Worktree represents a Git worktree
 type Worktree struct {
-	Path      string
-	Branch    string
-	Commit    string
-	IsCurrent bool
+	Path        string
+	Branch      string
+	Commit      string
+	IsCurrent   bool
+	BehindCount int  // Commits behind base branch
+	AheadCount  int  // Commits ahead of base branch
+	IsOutdated  bool // Convenience flag: true if behind > 0
 }
 
 // Manager handles Git worktree operations
@@ -329,4 +332,186 @@ func randomInt(max int) int {
 		return 0
 	}
 	return int(n.Int64())
+}
+
+// Push pushes commits from a branch to remote
+func (m *Manager) Push(worktreePath, branch string) error {
+	// First check if remote exists
+	cmd := exec.Command("git", "-C", worktreePath, "remote", "get-url", "origin")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("no remote 'origin' configured")
+	}
+
+	// Push with --set-upstream to create remote branch if it doesn't exist
+	cmd = exec.Command("git", "-C", worktreePath, "push", "-u", "origin", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to push: %s", string(output))
+	}
+
+	return nil
+}
+
+// RemoteBranchExists checks if a branch exists on the remote
+func (m *Manager) RemoteBranchExists(worktreePath, branch string) (bool, error) {
+	cmd := exec.Command("git", "-C", worktreePath, "rev-parse", "--verify", fmt.Sprintf("origin/%s", branch))
+	err := cmd.Run()
+	if err != nil {
+		// Check if it's an actual error or just branch not found
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 128 {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check remote branch: %w", err)
+	}
+	return true, nil
+}
+
+// HasCommits checks if the current branch has any commits
+func (m *Manager) HasCommits(worktreePath string) (bool, error) {
+	cmd := exec.Command("git", "-C", worktreePath, "rev-list", "--count", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to count commits: %w", err)
+	}
+	commitCount := strings.TrimSpace(string(output))
+	return commitCount != "0", nil
+}
+
+// HasUnpushedCommits checks if there are commits that haven't been pushed
+func (m *Manager) HasUnpushedCommits(worktreePath, branch string) (bool, error) {
+	// First check if remote branch exists
+	remoteBranchExists, err := m.RemoteBranchExists(worktreePath, branch)
+	if err != nil {
+		return false, err
+	}
+
+	if !remoteBranchExists {
+		// Remote branch doesn't exist, so we have unpushed commits if we have any commits
+		return m.HasCommits(worktreePath)
+	}
+
+	// Remote branch exists, check if we're ahead
+	cmd := exec.Command("git", "-C", worktreePath, "rev-list", "--count", fmt.Sprintf("origin/%s..HEAD", branch))
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check unpushed commits: %w", err)
+	}
+
+	commitCount := strings.TrimSpace(string(output))
+	return commitCount != "0", nil
+}
+
+// GetRemoteURL returns the URL of the origin remote
+func (m *Manager) GetRemoteURL() (string, error) {
+	cmd := exec.Command("git", "-C", m.repoPath, "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get remote URL: %w", err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// IsGitHubRepo checks if the repository is hosted on GitHub
+func (m *Manager) IsGitHubRepo() (bool, error) {
+	url, err := m.GetRemoteURL()
+	if err != nil {
+		return false, err
+	}
+
+	// Check if URL contains github.com
+	return strings.Contains(url, "github.com"), nil
+}
+
+// HasUncommittedChanges checks if there are uncommitted changes in a worktree
+func (m *Manager) HasUncommittedChanges(worktreePath string) (bool, error) {
+	// Check for staged and unstaged changes
+	cmd := exec.Command("git", "-C", worktreePath, "status", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check git status: %w", err)
+	}
+
+	// If output is not empty, there are uncommitted changes
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// FetchRemote fetches updates from the remote repository without merging
+func (m *Manager) FetchRemote() error {
+	cmd := exec.Command("git", "-C", m.repoPath, "fetch", "origin")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to fetch from remote: %s", string(output))
+	}
+	return nil
+}
+
+// GetBranchStatus returns the ahead and behind counts for a branch compared to the base branch
+// Returns (aheadCount, behindCount, error)
+func (m *Manager) GetBranchStatus(worktreePath, branch, baseBranch string) (int, int, error) {
+	if baseBranch == "" {
+		return 0, 0, fmt.Errorf("base branch not specified")
+	}
+
+	// Check if base branch exists
+	cmd := exec.Command("git", "-C", worktreePath, "rev-parse", "--verify", baseBranch)
+	if err := cmd.Run(); err != nil {
+		return 0, 0, fmt.Errorf("base branch '%s' does not exist", baseBranch)
+	}
+
+	// Get ahead count (commits in current branch not in base)
+	cmd = exec.Command("git", "-C", worktreePath, "rev-list", "--count", fmt.Sprintf("%s..%s", baseBranch, branch))
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get ahead count: %w", err)
+	}
+	aheadCount := 0
+	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &aheadCount)
+
+	// Get behind count (commits in base not in current branch)
+	cmd = exec.Command("git", "-C", worktreePath, "rev-list", "--count", fmt.Sprintf("%s..%s", branch, baseBranch))
+	output, err = cmd.Output()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get behind count: %w", err)
+	}
+	behindCount := 0
+	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &behindCount)
+
+	return aheadCount, behindCount, nil
+}
+
+// MergeBranch merges the specified base branch into the current branch in the worktree
+func (m *Manager) MergeBranch(worktreePath, baseBranch string) error {
+	if baseBranch == "" {
+		return fmt.Errorf("base branch not specified")
+	}
+
+	// Check if base branch exists
+	cmd := exec.Command("git", "-C", worktreePath, "rev-parse", "--verify", baseBranch)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("base branch '%s' does not exist", baseBranch)
+	}
+
+	// Perform the merge
+	cmd = exec.Command("git", "-C", worktreePath, "merge", baseBranch, "--no-edit")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		// Check if it's a merge conflict
+		if strings.Contains(outputStr, "CONFLICT") || strings.Contains(outputStr, "Automatic merge failed") {
+			return fmt.Errorf("merge conflict occurred. Use 'git merge --abort' to abort the merge")
+		}
+		return fmt.Errorf("failed to merge: %s", outputStr)
+	}
+
+	return nil
+}
+
+// AbortMerge aborts an in-progress merge and returns to a clean state
+func (m *Manager) AbortMerge(worktreePath string) error {
+	cmd := exec.Command("git", "-C", worktreePath, "merge", "--abort")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to abort merge: %s", string(output))
+	}
+	return nil
 }

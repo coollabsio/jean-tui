@@ -27,7 +27,18 @@ func NewManager() *Manager {
 }
 
 // SanitizeName sanitizes a branch name for use as a tmux session name
+// If isTerminal is true, appends "-terminal" suffix to differentiate from Claude sessions
 func (m *Manager) SanitizeName(branch string) string {
+	return m.sanitizeNameWithType(branch, false)
+}
+
+// SanitizeNameTerminal creates a terminal-only session name
+func (m *Manager) SanitizeNameTerminal(branch string) string {
+	return m.sanitizeNameWithType(branch, true)
+}
+
+// sanitizeNameWithType is the internal implementation
+func (m *Manager) sanitizeNameWithType(branch string, isTerminal bool) string {
 	// Replace invalid characters with hyphens
 	reg := regexp.MustCompile(`[^a-zA-Z0-9\-_]`)
 	sanitized := reg.ReplaceAllString(branch, "-")
@@ -39,6 +50,9 @@ func (m *Manager) SanitizeName(branch string) string {
 	// Trim hyphens from start/end
 	sanitized = strings.Trim(sanitized, "-")
 
+	if isTerminal {
+		return sessionPrefix + sanitized + "-terminal"
+	}
 	return sessionPrefix + sanitized
 }
 
@@ -50,8 +64,14 @@ func (m *Manager) SessionExists(sessionName string) bool {
 }
 
 // CreateOrAttach creates a new session or attaches to existing one
-func (m *Manager) CreateOrAttach(path, branch string, autoStartClaude bool) error {
-	sessionName := m.SanitizeName(branch)
+// If terminalOnly is true, creates/attaches to a terminal-only session (no Claude)
+func (m *Manager) CreateOrAttach(path, branch string, autoStartClaude bool, terminalOnly bool) error {
+	var sessionName string
+	if terminalOnly {
+		sessionName = m.SanitizeNameTerminal(branch)
+	} else {
+		sessionName = m.SanitizeName(branch)
+	}
 
 	if m.SessionExists(sessionName) {
 		// Attach to existing session

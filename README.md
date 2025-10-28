@@ -98,11 +98,11 @@ gcool -path /path/to/other/repo
 ### Main View - Navigation
 - `↑` / `k` - Move cursor up in worktree list
 - `↓` / `j` - Move cursor down in worktree list
-- `Enter` / `Space` - Switch to selected worktree (with Claude)
+- `Enter` - Switch to selected worktree (with Claude)
 - `t` - Open terminal in worktree (without Claude)
 
 ### Main View - Worktree Management
-- `n` - Create new worktree with a **new branch** (random name pre-filled)
+- `n` - Create new worktree with a **new branch** (random name, selects but doesn't auto-switch)
 - `a` - Create worktree from an **existing branch**
 - `d` / `x` - Delete selected worktree
 - `r` - Refresh worktree list
@@ -123,15 +123,27 @@ gcool -path /path/to/other/repo
 - `Enter` - Confirm action
 - `Esc` - Cancel/close modal
 
-### Session List Modal (Press `s`)
+### Session List Modal (Press `S` - Shift+S)
 - `↑` / `↓` / `j` / `k` - Navigate through sessions
 - `Enter` - Attach to selected session
 - `k` - Kill selected session
 - `Esc` / `q` - Close modal
 
 ### Branch Selection Modals (Press `a`, `C`, or `c`)
-- `↑` / `↓` - Navigate through branch list
+- Type to filter branches by name
+- `↑` / `↓` / `j` / `k` - Navigate through filtered branch list
+- `Tab` - Cycle between search input, list, and buttons
 - `Enter` - Select branch
+- `Esc` - Cancel
+
+### Settings Modal (Press `s`)
+- `↑` / `↓` / `j` / `k` - Navigate through settings options
+- `Enter` - Configure selected setting
+- `Esc` / `q` - Close modal
+
+### Editor Selection Modal (Press `e` or via settings)
+- `↑` / `↓` / `j` / `k` - Navigate through available editors
+- `Enter` - Select and save editor preference
 - `Esc` - Cancel
 
 ## How It Works
@@ -145,26 +157,42 @@ This keeps your workspace organized and makes it easy to manage multiple feature
 
 ## Tmux Sessions & Claude CLI
 
-When you switch to a worktree, `gcool` automatically:
+When you switch to a worktree, `gcool` creates separate sessions for different purposes:
 
-1. **Creates or attaches to a tmux session** named `gcool-<branch-name>`
-2. **Starts Claude CLI** in the session (by default)
-3. **Persists your work** - detach anytime with `Ctrl+B D`
+1. **Claude sessions** (`Enter` key): Named `gcool-<branch-name>`, includes Claude CLI
+2. **Terminal sessions** (`t` key): Named `gcool-<branch-name>-terminal`, shell only
+3. **Both sessions can coexist** for the same worktree
+4. **Persists your work** - detach anytime with `Ctrl+B D`
+
+You can have both a Claude session and a terminal session open for the same worktree and switch between them as needed.
 
 ### Session Management
 
-**View all sessions**: Press `s` in the TUI to see active sessions
+**View all sessions**: Press `S` (Shift+S) in the TUI to see active sessions
+
+**Switching between sessions**:
+1. Open a terminal session with `t` (creates `gcool-<branch>-terminal`)
+2. Work in the terminal, then press `Ctrl+B D` to detach
+3. You'll automatically return to gcool
+4. Press `Enter` to open the Claude session (creates `gcool-<branch>`)
+5. Now you have both sessions running simultaneously
+6. You can continue detaching and switching between sessions
 
 **Manual session control**:
 ```bash
 # List all gcool sessions
 tmux ls | grep gcool-
 
-# Attach to a specific session
+# Attach to a specific Claude session
 tmux attach -t gcool-feature-auth
+
+# Attach to a specific terminal session
+tmux attach -t gcool-feature-auth-terminal
 
 # Kill a session
 tmux kill-session -t gcool-feature-auth
+# or
+tmux kill-session -t gcool-feature-auth-terminal
 ```
 
 **Detach from session**: `Ctrl+B D` (tmux default)
@@ -177,20 +205,25 @@ gcool --no-claude
 ### How Sessions Work
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  You: gcool (select "feature-auth")                      │
-├─────────────────────────────────────────────────────────┤
-│  Shell checks: tmux session "gcool-feature-auth" exists? │
-│  ├─ YES → Attach to existing session                   │
-│  └─ NO  → Create new session + start Claude CLI        │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│  You: gcool (select "feature-auth")                          │
+├─────────────────────────────────────────────────────────────┤
+│  Press Enter → Claude session "gcool-feature-auth"           │
+│  ├─ Exists? → Attach to existing Claude session            │
+│  └─ New? → Create session + start Claude CLI               │
+│                                                              │
+│  Press t → Terminal session "gcool-feature-auth-terminal"   │
+│  ├─ Exists? → Attach to existing terminal session          │
+│  └─ New? → Create session with shell only                  │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 **Benefits**:
-- Each worktree has its own isolated Claude session
+- Each worktree can have TWO separate sessions (Claude + terminal)
 - Work persists across terminal restarts
 - Context is maintained per branch
 - Easy to switch between multiple features
+- Flexibility to use Claude or terminal as needed
 
 ## UI Overview
 
@@ -215,10 +248,10 @@ gcool --no-claude
 
 ### Create a New Worktree with a New Branch
 
-1. Press `n` to open the create modal
-2. A random branch name is pre-filled (e.g., `happy-panda-42`)
-3. You can edit the name or press `Enter` to use it as-is
-4. Worktree is created in `.workspaces/` with another random name
+1. Press `n` to instantly create a worktree with a random branch name (e.g., `happy-panda-42`)
+2. The worktree is created in `.workspaces/` with another random name
+3. The newly created worktree is automatically selected in the list
+4. Press `Enter` to switch to it and open Claude session when ready
 
 ### Create a Worktree from an Existing Branch
 
@@ -230,8 +263,8 @@ gcool --no-claude
 ### Switch to a Worktree
 
 1. Navigate to the desired worktree with `↑`/`↓`
-2. Press `Enter` or `Space`
-3. Your shell will automatically `cd` to that worktree
+2. Press `Enter` to switch with Claude session, or `t` for terminal only
+3. Your shell will automatically `cd` to that worktree and open the session
 
 ### Delete a Worktree
 
@@ -309,6 +342,11 @@ Press `s` to open the settings menu, where you can configure:
    - Press `Enter` to select from available branches
    - Used when creating new branches with `n` key
 
+3. **Tmux Config** - Install/update/remove opinionated tmux configuration
+   - Press `Enter` to manage gcool's tmux config in `~/.tmux.conf`
+   - Adds mouse support, better scrollback, Ctrl-D detach, and more
+   - Config is clearly marked and can be safely removed anytime
+
 All settings are saved per-repository in `~/.config/gcool/config.json`:
 
 ```json
@@ -324,27 +362,32 @@ All settings are saved per-repository in `~/.config/gcool/config.json`:
 
 ### Tmux Configuration
 
-gcool uses a custom tmux configuration that enhances the default experience without modifying your `~/.tmux.conf`.
+gcool provides an opinionated tmux configuration that can be optionally installed to enhance your terminal experience.
 
-**Configuration file**: `~/.config/gcool/tmux.conf`
+**Installing the config:**
+1. Press `s` to open the settings menu
+2. Navigate to "Tmux Config" and press `Enter`
+3. Press `Enter` on "Install Config" button
+4. The config will be appended to your `~/.tmux.conf` in a clearly marked section
 
-This config:
-- **Sources your `~/.tmux.conf` first** - Your personal settings are preserved
-- **Adds gcool-specific enhancements**:
-  - Mouse scrolling enabled
-  - 10,000 line scrollback buffer
-  - 256 color support
-  - Better status bar with gcool branding
-  - Nice pane border colors
+**Features included:**
+- **Mouse scrolling enabled** - Scroll with your mouse wheel like a normal terminal
+- **10,000 line scrollback buffer** - More history to scroll through
+- **256 color support** - Better colors and styling
+- **Ctrl-D to detach** - Quick detach with `Ctrl+D` instead of `Ctrl+B D`
+- **Better status bar** - Minimal design with gcool branding
+- **Nice pane border colors** - Visual improvements
 
-**Customizing**:
-You can edit `~/.config/gcool/tmux.conf` to customize gcool's tmux behavior. Changes will apply to new sessions.
+**Managing the config:**
+- **Update**: If gcool adds new features, use the "Update Config" button to get the latest
+- **Remove**: Use the "Remove Config" button to cleanly remove the gcool section
+- **Manual edit**: The config is marked with unique identifiers - you can manually delete it anytime
 
-**Key features**:
-- Mouse wheel scrolling works like a normal terminal
-- Click to select panes
-- Drag to resize panes
-- `Prefix + r` to reload gcool tmux config
+**Important notes:**
+- Your existing `~/.tmux.conf` settings are preserved
+- Changes apply to new tmux sessions only (existing sessions are unaffected)
+- The config section has warning markers - don't modify them as they're used for updates
+- You can safely delete the entire marked section if you no longer want it
 
 ### Base Branch
 
@@ -359,10 +402,10 @@ You can change the base branch at any time by pressing `c` in the main view.
 
 ### Editor Integration
 
-gcool includes a built-in editor selection menu for opening worktrees in your IDE.
+gcool includes built-in editor integration for opening worktrees in your IDE with a single keypress.
 
 **Setting your preferred editor:**
-1. Press `e` in the main view to open the editor selection modal
+1. Press `e` in the main view (or access via settings menu with `s`)
 2. Use `↑`/`↓` or `j`/`k` to navigate through available editors
 3. Press `Enter` to select and save your preference
 
@@ -376,8 +419,15 @@ gcool includes a built-in editor selection menu for opening worktrees in your ID
 - `zed` - Zed
 
 **Opening a worktree:**
-- Press `o` on any worktree to open it in your configured editor
-- The editor preference is saved per repository in `~/.config/gcool/config.json`
+- Navigate to any worktree in the list
+- Press `o` to open it in your configured editor
+- The editor launches in the background and you stay in gcool
+- Editor preference is saved per repository in `~/.config/gcool/config.json`
+
+**Tips:**
+- If opening fails, press `e` to select a different editor
+- Each repository can have its own editor preference
+- The editor command must be in your PATH
 
 ## Architecture
 

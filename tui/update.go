@@ -40,14 +40,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = nil
 			m.status = ""
 
-			// Restore last selected branch if available
-			if m.configManager != nil {
-				if lastBranch := m.configManager.GetLastSelectedBranch(m.repoPath); lastBranch != "" {
-					// Find the worktree with this branch
-					for i, wt := range m.worktrees {
-						if wt.Branch == lastBranch {
-							m.selectedIndex = i
-							break
+			// If we just created a worktree, select it
+			if m.lastCreatedBranch != "" {
+				for i, wt := range m.worktrees {
+					if wt.Branch == m.lastCreatedBranch {
+						m.selectedIndex = i
+						// Clear the flag
+						m.lastCreatedBranch = ""
+						break
+					}
+				}
+			} else {
+				// Otherwise, restore last selected branch if available
+				if m.configManager != nil {
+					if lastBranch := m.configManager.GetLastSelectedBranch(m.repoPath); lastBranch != "" {
+						// Find the worktree with this branch
+						for i, wt := range m.worktrees {
+							if wt.Branch == lastBranch {
+								m.selectedIndex = i
+								break
+							}
 						}
 					}
 				}
@@ -78,16 +90,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return clearErrorMsg{}
 			})
 		} else {
-			m.status = "Worktree created successfully - switching..."
+			m.status = "Worktree created successfully"
 			m.modal = noModal
 
-			// Automatically switch to the newly created worktree
-			m.switchInfo = SwitchInfo{
-				Path:       msg.path,
-				Branch:     msg.branch,
-				AutoClaude: m.autoClaude,
-			}
-			return m, tea.Quit
+			// Store the newly created branch name for selection after reload
+			m.lastCreatedBranch = msg.branch
+
+			// Reload worktrees and select the newly created one
+			cmd = m.loadWorktrees
+
+			// Auto-clear status after 2 seconds
+			return m, tea.Batch(
+				cmd,
+				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return clearErrorMsg{}
+				}),
+			)
 		}
 		return m, cmd
 
@@ -173,6 +191,71 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return clearErrorMsg{}
 			})
 		}
+
+	case prCreatedMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "Failed to create PR: " + msg.err.Error()
+			// Auto-clear error after 4 seconds
+			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+				return clearErrorMsg{}
+			})
+		} else {
+			m.status = "Draft PR created: " + msg.prURL
+			m.err = nil
+			// Auto-clear status after 5 seconds
+			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+				return clearErrorMsg{}
+			})
+		}
+
+	case tickMsg:
+		// Schedule the next check and trigger branch status update
+		return m, tea.Batch(
+			m.scheduleBranchCheck(),
+			m.checkBranchStatuses(),
+		)
+
+	case branchStatusCheckedMsg:
+		if msg.err != nil {
+			// Silently fail - don't bother user with fetch errors
+			// Just schedule the next check
+			return m, nil
+		}
+		// Update worktrees with fresh status
+		m.worktrees = msg.worktrees
+		m.lastFetchTime = time.Now()
+		return m, nil
+
+	case branchPulledMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			if msg.hadConflict {
+				// Show error with abort option
+				m.status = "Merge conflict! Run 'git merge --abort' in the worktree to abort."
+			} else {
+				m.status = "Failed to pull from base branch: " + msg.err.Error()
+			}
+			// Auto-clear error after 5 seconds
+			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+				return clearErrorMsg{}
+			})
+		} else {
+			m.status = "Successfully pulled changes from base branch"
+			m.err = nil
+			// Refresh worktree list and status after successful pull
+			cmd = tea.Batch(
+				m.loadWorktrees,
+				m.checkBranchStatuses(),
+			)
+			// Auto-clear status after 2 seconds
+			return m, tea.Sequence(
+				cmd,
+				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return clearErrorMsg{}
+				}),
+			)
+		}
 	}
 
 	return m, cmd
@@ -245,9 +328,17 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.filteredBranches = nil
 		return m, m.loadBranches
 
-	case "d", "x":
+	case "d":
 		// Open delete modal
 		if wt := m.selectedWorktree(); wt != nil && !wt.IsCurrent {
+			// Check for uncommitted changes
+			hasUncommitted, err := m.gitManager.HasUncommittedChanges(wt.Path)
+			if err != nil {
+				m.status = "Failed to check for uncommitted changes"
+				return m, nil
+			}
+			m.deleteHasUncommitted = hasUncommitted
+			m.deleteConfirmForce = false
 			m.modal = deleteModal
 			m.modalFocused = 0
 			return m, nil
@@ -255,17 +346,18 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = "Cannot delete current worktree"
 		}
 
-	case "enter", " ":
-		// Switch to selected worktree
+	case "enter":
+		// Switch to selected worktree with Claude
 		if wt := m.selectedWorktree(); wt != nil && !wt.IsCurrent {
 			// Save the last selected branch before switching
 			if m.configManager != nil {
 				_ = m.configManager.SetLastSelectedBranch(m.repoPath, wt.Branch)
 			}
 			m.switchInfo = SwitchInfo{
-				Path:       wt.Path,
-				Branch:     wt.Branch,
-				AutoClaude: m.autoClaude,
+				Path:         wt.Path,
+				Branch:       wt.Branch,
+				AutoClaude:   m.autoClaude,
+				TerminalOnly: false, // Explicitly use Claude session, not terminal-only
 			}
 			return m, tea.Quit
 		}
@@ -350,6 +442,38 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.modalFocused = 0
 		m.sessionIndex = 0
 		return m, m.loadSessions
+
+	case "p":
+		// Create draft PR (push + open PR)
+		if wt := m.selectedWorktree(); wt != nil {
+			m.status = "Creating draft PR..."
+			return m, m.createPR(wt.Path, wt.Branch)
+		}
+
+	case "P":
+		// Pull changes from base branch (Shift+P)
+		if wt := m.selectedWorktree(); wt != nil {
+			// Check if base branch is set
+			if m.baseBranch == "" {
+				m.status = "Base branch not set. Press 'c' to set base branch"
+				return m, nil
+			}
+
+			// Only allow pull if worktree is behind
+			if !wt.IsOutdated || wt.BehindCount == 0 {
+				m.status = "Worktree is already up-to-date with base branch"
+				return m, nil
+			}
+
+			// Don't allow pull on main worktree
+			if !strings.Contains(wt.Path, ".workspaces") {
+				m.status = "Cannot pull on main worktree. Use 'git pull' manually."
+				return m, nil
+			}
+
+			m.status = "Pulling changes from base branch..."
+			return m, m.pullFromBaseBranch(wt.Path, m.baseBranch)
+		}
 	}
 
 	return m, nil
@@ -464,17 +588,60 @@ func (m Model) handleDeleteModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab", "left", "right", "h", "l":
-		m.modalFocused = (m.modalFocused + 1) % 2
+		// If uncommitted changes, we have 3 buttons (Yes/No/Force), otherwise 2 (Yes/No)
+		if m.deleteHasUncommitted {
+			m.modalFocused = (m.modalFocused + 1) % 3
+		} else {
+			m.modalFocused = (m.modalFocused + 1) % 2
+		}
 
 	case "enter", "y":
-		if m.modalFocused == 0 || msg.String() == "y" {
-			// Confirm delete
-			if wt := m.selectedWorktree(); wt != nil {
-				return m, m.deleteWorktree(wt.Path, wt.Branch, false)
+		// If there are uncommitted changes and user hasn't confirmed force
+		if m.deleteHasUncommitted && !m.deleteConfirmForce {
+			// modalFocused: 0 = Yes (blocked), 1 = No, 2 = Force Delete
+			if m.modalFocused == 2 || msg.String() == "f" {
+				// User clicked "Force Delete" - set confirmation flag
+				m.deleteConfirmForce = true
+				m.status = "Press 'y' or Enter to confirm force delete"
+				return m, nil
+			} else if m.modalFocused == 1 || msg.String() == "n" {
+				// User clicked "No" - cancel
+				m.modal = noModal
+				return m, nil
+			} else if m.modalFocused == 0 {
+				// User tried to click "Yes" but it's blocked
+				m.status = "Cannot delete: uncommitted changes. Use 'Force Delete' to proceed."
+				return m, nil
 			}
+		} else if m.deleteHasUncommitted && m.deleteConfirmForce {
+			// User already confirmed, now execute force delete
+			if m.modalFocused == 0 || msg.String() == "y" {
+				if wt := m.selectedWorktree(); wt != nil {
+					m.modal = noModal
+					return m, m.deleteWorktree(wt.Path, wt.Branch, true) // force = true
+				}
+			}
+			m.modal = noModal
+			return m, nil
+		} else {
+			// No uncommitted changes, normal delete
+			if m.modalFocused == 0 || msg.String() == "y" {
+				if wt := m.selectedWorktree(); wt != nil {
+					m.modal = noModal
+					return m, m.deleteWorktree(wt.Path, wt.Branch, false)
+				}
+			}
+			m.modal = noModal
+			return m, nil
 		}
-		m.modal = noModal
-		return m, nil
+
+	case "f":
+		// Shortcut for "Force Delete"
+		if m.deleteHasUncommitted && !m.deleteConfirmForce {
+			m.deleteConfirmForce = true
+			m.status = "Press 'y' or Enter to confirm force delete"
+			return m, nil
+		}
 	}
 
 	return m, nil
@@ -665,7 +832,7 @@ func (m Model) handleSessionListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 			return m, tea.Quit
 		}
 
-	case "x", "d":
+	case "d":
 		// Kill selected session
 		if m.sessionIndex >= 0 && m.sessionIndex < len(m.sessions) {
 			sess := m.sessions[m.sessionIndex]

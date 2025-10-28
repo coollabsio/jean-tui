@@ -2,16 +2,36 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+// TODO: Make theming system
+// Future implementation should allow users to:
+// 1. Choose from predefined themes (Matrix, Dracula, Nord, etc.)
+// 2. Define custom themes via config file
+// 3. Store theme preference in ~/.config/gcool/config.json
+// 4. Load theme on startup and apply dynamically
+//
+// Theme structure should include:
+// - Primary, secondary, accent colors
+// - Background and foreground colors
+// - Error, warning, and success colors
+// - Muted/dimmed text colors
+//
+// Implementation approach:
+// - Add Theme struct in config package
+// - Add ApplyTheme() function to load colors
+// - Add theme selection modal to settings (press 's' -> 't')
+// - Support both built-in themes and custom color definitions
+
 var (
-	// Colors
-	primaryColor   = lipgloss.Color("#7D56F4")
-	secondaryColor = lipgloss.Color("#FF79C6")
-	accentColor    = lipgloss.Color("#50FA7B")
-	warningColor   = lipgloss.Color("#FFB86C")
-	errorColor     = lipgloss.Color("#FF5555")
-	mutedColor     = lipgloss.Color("#6272A4")
-	bgColor        = lipgloss.Color("#282A36")
-	fgColor        = lipgloss.Color("#F8F8F2")
+	// Colors - Matrix Theme (black with green)
+	primaryColor   = lipgloss.Color("#00FF41") // Bright Matrix green
+	secondaryColor = lipgloss.Color("#008F11") // Medium green
+	accentColor    = lipgloss.Color("#00FF41") // Bright Matrix green for highlights
+	warningColor   = lipgloss.Color("#AAFF00") // Yellow-green for warnings
+	successColor   = lipgloss.Color("#00FF41") // Bright green for success
+	errorColor     = lipgloss.Color("#FF0000") // Red for errors
+	mutedColor     = lipgloss.Color("#003B00") // Dark green for muted text
+	bgColor        = lipgloss.Color("#000000") // Pure black background
+	fgColor        = lipgloss.Color("#00FF41") // Bright green text
 
 	// Base styles
 	baseStyle = lipgloss.NewStyle().
@@ -35,16 +55,18 @@ var (
 
 	// List item styles
 	selectedItemStyle = lipgloss.NewStyle().
-				Foreground(accentColor).
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#00FF41")).
 				Bold(true).
-				PaddingLeft(2)
+				PaddingLeft(2).
+				PaddingRight(2)
 
 	normalItemStyle = lipgloss.NewStyle().
-			Foreground(fgColor).
+			Foreground(lipgloss.Color("#00AA00")).
 			PaddingLeft(2)
 
 	currentWorktreeStyle = lipgloss.NewStyle().
-				Foreground(secondaryColor).
+				Foreground(lipgloss.Color("#00FF41")).
 				Bold(true).
 				PaddingLeft(2)
 
@@ -58,15 +80,15 @@ var (
 
 	// Help/Status bar
 	helpStyle = lipgloss.NewStyle().
-			Foreground(mutedColor).
+			Foreground(lipgloss.Color("#008800")).
 			Padding(0, 1)
 
 	statusStyle = lipgloss.NewStyle().
-			Foreground(accentColor).
+			Foreground(lipgloss.Color("#00FF41")).
 			Bold(true)
 
 	errorStyle = lipgloss.NewStyle().
-			Foreground(errorColor).
+			Foreground(lipgloss.Color("#FF0000")).
 			Bold(true)
 
 	// Modal styles
@@ -86,26 +108,42 @@ var (
 			Bold(true)
 
 	buttonStyle = lipgloss.NewStyle().
-			Foreground(fgColor).
-			Background(primaryColor).
-			Padding(0, 2).
-			MarginRight(1)
+			Foreground(lipgloss.Color("#00AA00")).
+			Padding(0, 3).
+			MarginRight(2)
 
 	selectedButtonStyle = lipgloss.NewStyle().
-				Foreground(fgColor).
-				Background(accentColor).
-				Padding(0, 2).
-				MarginRight(1).
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#00FF41")).
+				Padding(0, 3).
+				MarginRight(2).
 				Bold(true)
 
 	cancelButtonStyle = lipgloss.NewStyle().
-				Foreground(fgColor).
-				Background(mutedColor).
-				Padding(0, 2)
+				Foreground(lipgloss.Color("#00AA00")).
+				Padding(0, 3)
 
 	selectedCancelButtonStyle = lipgloss.NewStyle().
-					Foreground(fgColor).
-					Background(errorColor).
-					Padding(0, 2).
+					Foreground(lipgloss.Color("#FFFFFF")).
+					Background(lipgloss.Color("#FF0000")).
+					Padding(0, 3).
 					Bold(true)
+
+	// Delete button styles (red for danger)
+	deleteButtonStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#AA0000")).
+				Padding(0, 3).
+				MarginRight(2)
+
+	selectedDeleteButtonStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("#FFFFFF")).
+					Background(lipgloss.Color("#FF0000")).
+					Padding(0, 3).
+					MarginRight(2).
+					Bold(true)
+
+	disabledButtonStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#333333")).
+				Padding(0, 3).
+				MarginRight(2)
 )

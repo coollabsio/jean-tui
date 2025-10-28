@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coollabsio/gcool/config"
 	"github.com/coollabsio/gcool/git"
+	"github.com/coollabsio/gcool/github"
 	"github.com/coollabsio/gcool/session"
 )
 
@@ -41,6 +43,7 @@ type Model struct {
 	gitManager     *git.Manager
 	sessionManager *session.Manager
 	configManager  *config.Manager
+	githubManager  *github.Manager
 	worktrees      []git.Worktree
 	branches       []string
 	sessions       []session.Session
@@ -58,18 +61,25 @@ type Model struct {
 	autoClaude      bool       // Whether to auto-start Claude
 	baseBranch      string     // Base branch for new worktrees
 
+	// Branch status tracking
+	lastFetchTime     time.Time // Last time we fetched from remote
+	fetchInterval     int       // Fetch interval in seconds (from config)
+	lastCreatedBranch string    // Last created branch name (for auto-selection after creation)
+
 	// Modal state
-	modal            modalType
-	modalFocused     int // Which input/button is focused in modal
-	nameInput        textinput.Model
-	pathInput        textinput.Model
-	searchInput      textinput.Model
-	branchIndex      int
-	filteredBranches []string // Filtered list of branches for search
-	createNewBranch  bool
-	editorIndex      int      // Selected editor index
-	editors          []string // List of available editors
-	settingsIndex    int      // Selected setting option index
+	modal                  modalType
+	modalFocused           int // Which input/button is focused in modal
+	nameInput              textinput.Model
+	pathInput              textinput.Model
+	searchInput            textinput.Model
+	branchIndex            int
+	filteredBranches       []string // Filtered list of branches for search
+	createNewBranch        bool
+	editorIndex            int      // Selected editor index
+	editors                []string // List of available editors
+	settingsIndex          int      // Selected setting option index
+	deleteHasUncommitted   bool     // Whether worktree to delete has uncommitted changes
+	deleteConfirmForce     bool     // User acknowledged they want to delete despite uncommitted changes
 }
 
 // NewModel creates a new TUI model
@@ -115,6 +125,7 @@ func NewModel(repoPath string, autoClaude bool) Model {
 		gitManager:     gitManager,
 		sessionManager: session.NewManager(),
 		configManager:  configManager,
+		githubManager:  github.NewManager(),
 		nameInput:      nameInput,
 		pathInput:      pathInput,
 		searchInput:    searchInput,
@@ -126,9 +137,17 @@ func NewModel(repoPath string, autoClaude bool) Model {
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
+	// Load fetch interval from config (default 10s)
+	if m.configManager != nil {
+		m.fetchInterval = m.configManager.GetAutoFetchInterval(m.repoPath)
+	} else {
+		m.fetchInterval = 10
+	}
+
 	return tea.Batch(
 		m.loadWorktrees,
 		m.loadBaseBranch,
+		m.scheduleBranchCheck(),
 		tea.EnterAltScreen,
 	)
 }
@@ -173,6 +192,23 @@ type (
 
 	editorOpenedMsg struct {
 		err error
+	}
+
+	prCreatedMsg struct {
+		err   error
+		prURL string
+	}
+
+	tickMsg struct{}
+
+	branchStatusCheckedMsg struct {
+		worktrees []git.Worktree
+		err       error
+	}
+
+	branchPulledMsg struct {
+		err        error
+		hadConflict bool
 	}
 )
 
@@ -275,6 +311,73 @@ func (m Model) openInEditor(path string) tea.Cmd {
 	}
 }
 
+func (m Model) createPR(worktreePath, branch string) tea.Cmd {
+	return func() tea.Msg {
+		// Check if it's a GitHub repo
+		isGitHub, err := m.gitManager.IsGitHubRepo()
+		if err != nil {
+			return prCreatedMsg{err: fmt.Errorf("failed to check repository: %w", err)}
+		}
+		if !isGitHub {
+			return prCreatedMsg{err: fmt.Errorf("not a GitHub repository")}
+		}
+
+		// Check if base branch is set
+		if m.baseBranch == "" {
+			return prCreatedMsg{err: fmt.Errorf("base branch not set. Press 'c' to set base branch")}
+		}
+
+		// Check if the branch has any commits
+		hasCommits, err := m.gitManager.HasCommits(worktreePath)
+		if err != nil {
+			return prCreatedMsg{err: fmt.Errorf("failed to check for commits: %w", err)}
+		}
+		if !hasCommits {
+			return prCreatedMsg{err: fmt.Errorf("no commits to create PR")}
+		}
+
+		// Check if remote branch exists
+		remoteBranchExists, err := m.gitManager.RemoteBranchExists(worktreePath, branch)
+		if err != nil {
+			return prCreatedMsg{err: fmt.Errorf("failed to check remote branch: %w", err)}
+		}
+
+		// Only push if branch doesn't exist remotely or has unpushed commits
+		if !remoteBranchExists {
+			// Push the branch for the first time
+			if err := m.gitManager.Push(worktreePath, branch); err != nil {
+				return prCreatedMsg{err: fmt.Errorf("failed to push commits: %w", err)}
+			}
+		} else {
+			// Branch exists remotely, check if we have unpushed commits
+			hasUnpushed, err := m.gitManager.HasUnpushedCommits(worktreePath, branch)
+			if err != nil {
+				return prCreatedMsg{err: fmt.Errorf("failed to check for unpushed commits: %w", err)}
+			}
+			if hasUnpushed {
+				// Push new commits
+				if err := m.gitManager.Push(worktreePath, branch); err != nil {
+					return prCreatedMsg{err: fmt.Errorf("failed to push commits: %w", err)}
+				}
+			}
+			// If no unpushed commits, branch is already up to date, continue to PR creation
+		}
+
+		// Create PR title from branch name (replace hyphens/underscores with spaces and capitalize)
+		title := strings.ReplaceAll(branch, "-", " ")
+		title = strings.ReplaceAll(title, "_", " ")
+		title = strings.Title(title)
+
+		// Create draft PR
+		prURL, err := m.githubManager.CreateDraftPR(worktreePath, branch, m.baseBranch, title)
+		if err != nil {
+			return prCreatedMsg{err: err}
+		}
+
+		return prCreatedMsg{prURL: prURL}
+	}
+}
+
 // Helper methods
 func (m Model) selectedWorktree() *git.Worktree {
 	if m.selectedIndex < 0 || m.selectedIndex >= len(m.worktrees) {
@@ -327,4 +430,85 @@ func (m Model) loadSessions() tea.Msg {
 
 type sessionsLoadedMsg struct {
 	sessions []session.Session
+}
+
+// scheduleBranchCheck returns a command that triggers periodic branch status checks
+func (m Model) scheduleBranchCheck() tea.Cmd {
+	return tea.Tick(time.Duration(m.fetchInterval)*time.Second, func(t time.Time) tea.Msg {
+		return tickMsg{}
+	})
+}
+
+// checkBranchStatuses checks the status of all worktrees against the base branch
+func (m Model) checkBranchStatuses() tea.Cmd {
+	return func() tea.Msg {
+		// Fetch from remote first (only if enough time has passed to avoid spamming)
+		now := time.Now()
+		if now.Sub(m.lastFetchTime) >= time.Duration(m.fetchInterval)*time.Second {
+			if err := m.gitManager.FetchRemote(); err != nil {
+				// Don't fail completely if fetch fails, just skip status check this time
+				return branchStatusCheckedMsg{err: err}
+			}
+		}
+
+		// Get fresh worktree list
+		worktrees, err := m.gitManager.List()
+		if err != nil {
+			return branchStatusCheckedMsg{err: err}
+		}
+
+		// Skip if base branch not set
+		if m.baseBranch == "" {
+			return branchStatusCheckedMsg{worktrees: worktrees}
+		}
+
+		// Check status for each worktree
+		for i := range worktrees {
+			wt := &worktrees[i]
+			// Skip detached HEAD state
+			if strings.HasPrefix(wt.Branch, "(detached") {
+				continue
+			}
+
+			// Skip the base branch itself
+			if wt.Branch == m.baseBranch {
+				continue
+			}
+
+			// Get branch status
+			ahead, behind, err := m.gitManager.GetBranchStatus(wt.Path, wt.Branch, m.baseBranch)
+			if err != nil {
+				// If error, just skip this worktree
+				continue
+			}
+
+			wt.AheadCount = ahead
+			wt.BehindCount = behind
+			wt.IsOutdated = behind > 0
+		}
+
+		return branchStatusCheckedMsg{worktrees: worktrees, err: nil}
+	}
+}
+
+// pullFromBaseBranch pulls changes from the base branch into the worktree
+func (m Model) pullFromBaseBranch(worktreePath, baseBranch string) tea.Cmd {
+	return func() tea.Msg {
+		// Fetch first to ensure we have latest changes
+		if err := m.gitManager.FetchRemote(); err != nil {
+			return branchPulledMsg{err: fmt.Errorf("failed to fetch: %w", err)}
+		}
+
+		// Merge base branch into current branch
+		err := m.gitManager.MergeBranch(worktreePath, baseBranch)
+		if err != nil {
+			// Check if it's a merge conflict
+			if strings.Contains(err.Error(), "merge conflict") {
+				return branchPulledMsg{err: err, hadConflict: true}
+			}
+			return branchPulledMsg{err: err, hadConflict: false}
+		}
+
+		return branchPulledMsg{err: nil, hadConflict: false}
+	}
 }

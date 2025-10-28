@@ -17,6 +17,7 @@ type RepoConfig struct {
 	BaseBranch         string `json:"base_branch"`
 	LastSelectedBranch string `json:"last_selected_branch,omitempty"`
 	Editor             string `json:"editor,omitempty"`
+	AutoFetchInterval  int    `json:"auto_fetch_interval,omitempty"` // in seconds, 0 = use default (10s)
 }
 
 // Manager handles configuration loading and saving
@@ -150,5 +151,30 @@ func (m *Manager) SetEditor(repoPath, editor string) error {
 	}
 
 	m.config.Repositories[repoPath].Editor = editor
+	return m.save()
+}
+
+// GetAutoFetchInterval returns the auto-fetch interval for a repository
+// Returns the configured interval in seconds, or 10 if not set
+func (m *Manager) GetAutoFetchInterval(repoPath string) int {
+	if repo, ok := m.config.Repositories[repoPath]; ok {
+		if repo.AutoFetchInterval > 0 {
+			return repo.AutoFetchInterval
+		}
+	}
+	return 10 // Default to 10 seconds
+}
+
+// SetAutoFetchInterval sets the auto-fetch interval for a repository
+func (m *Manager) SetAutoFetchInterval(repoPath string, interval int) error {
+	if m.config.Repositories == nil {
+		m.config.Repositories = make(map[string]*RepoConfig)
+	}
+
+	if _, ok := m.config.Repositories[repoPath]; !ok {
+		m.config.Repositories[repoPath] = &RepoConfig{}
+	}
+
+	m.config.Repositories[repoPath].AutoFetchInterval = interval
 	return m.save()
 }

@@ -240,6 +240,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 		}
 
+	case refreshWithPullMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.status = "Failed to refresh: " + msg.err.Error()
+			// Auto-clear error after 5 seconds
+			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+				return clearErrorMsg{}
+			})
+		} else {
+			m.status = "Refreshed and pulled latest commits"
+			m.err = nil
+			// Reload worktree list to show updated status
+			cmd = m.loadWorktrees
+			// Auto-clear status after 2 seconds
+			return m, tea.Sequence(
+				cmd,
+				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+					return clearErrorMsg{}
+				}),
+			)
+		}
+
 	case activityTickMsg:
 		// Check if enough time has passed since last activity check
 		if time.Since(m.lastActivityCheck) >= m.activityCheckInterval {
@@ -286,8 +308,8 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		m.status = "Refreshing..."
-		return m, m.loadWorktrees
+		m.status = "Pulling latest commits and refreshing..."
+		return m, m.refreshWithPull()
 
 	case "n":
 		// Instantly create worktree with random branch name from base branch

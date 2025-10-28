@@ -515,3 +515,35 @@ func (m *Manager) AbortMerge(worktreePath string) error {
 	}
 	return nil
 }
+
+// PullCurrentBranch pulls the current branch from origin
+// Uses git pull origin <branch>
+func (m *Manager) PullCurrentBranch(worktreePath, branch string) error {
+	cmd := exec.Command("git", "-C", worktreePath, "pull", "origin", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		// Check if it's a merge conflict
+		if strings.Contains(outputStr, "CONFLICT") || strings.Contains(outputStr, "Automatic merge failed") {
+			return fmt.Errorf("merge conflict occurred. Use 'git merge --abort' to abort the merge")
+		}
+		return fmt.Errorf("failed to pull: %s", outputStr)
+	}
+	return nil
+}
+
+// PullBranchInPath pulls a specific branch from origin in the given directory
+// Uses git pull origin <branch> in the specified path
+func (m *Manager) PullBranchInPath(path, branch string) error {
+	cmd := exec.Command("git", "-C", path, "pull", "origin", branch)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := string(output)
+		// Check if it's a merge conflict
+		if strings.Contains(outputStr, "CONFLICT") || strings.Contains(outputStr, "Automatic merge failed") {
+			return fmt.Errorf("merge conflict occurred. Use 'git merge --abort' to abort the merge")
+		}
+		return fmt.Errorf("failed to pull: %s", outputStr)
+	}
+	return nil
+}

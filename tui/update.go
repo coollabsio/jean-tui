@@ -31,16 +31,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case worktreesLoadedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to load worktrees"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to load worktrees", 4*time.Second)
+			return m, cmd
 		} else {
 			m.worktrees = msg.worktrees
-			m.err = nil
-			m.status = ""
 
 			// If we just created a worktree, select it
 			if m.lastCreatedBranch != "" {
@@ -71,56 +65,37 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case branchesLoadedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to load branches"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to load branches", 4*time.Second)
+			return m, cmd
 		} else {
 			m.branches = msg.branches
-			m.err = nil
 		}
 		return m, nil
 
 	case worktreeCreatedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to create worktree"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to create worktree", 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Worktree created successfully"
+			cmd = m.showSuccessNotification("Worktree created successfully", 3*time.Second)
 			m.modal = noModal
 
 			// Store the newly created branch name for selection after reload
 			m.lastCreatedBranch = msg.branch
 
 			// Reload worktrees and select the newly created one
-			cmd = m.loadWorktrees
-
-			// Auto-clear status after 2 seconds
 			return m, tea.Batch(
 				cmd,
-				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				}),
+				m.loadWorktrees,
 			)
 		}
-		return m, cmd
 
 	case worktreeDeletedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to delete worktree"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to delete worktree", 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Worktree deleted successfully"
+			cmd = m.showSuccessNotification("Worktree deleted successfully", 3*time.Second)
 			m.modal = noModal
 			if m.selectedIndex >= len(m.worktrees)-1 {
 				m.selectedIndex = len(m.worktrees) - 2
@@ -128,53 +103,57 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedIndex = 0
 				}
 			}
-			cmd = m.loadWorktrees
+			return m, tea.Batch(
+				cmd,
+				m.loadWorktrees,
+			)
 		}
-		return m, cmd
 
 	case branchRenamedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to rename branch"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to rename branch", 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Branch renamed successfully"
+			cmd = m.showSuccessNotification("Branch renamed successfully", 3*time.Second)
 			// Rename tmux sessions to match the new branch name
-			cmd = tea.Batch(
+			return m, tea.Batch(
+				cmd,
 				m.renameSessionsForBranch(msg.oldBranch, msg.newBranch),
 				m.loadWorktrees,
 			)
 		}
-		return m, cmd
 
 	case branchCheckedOutMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to checkout branch"
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to checkout branch", 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Branch checked out successfully"
-			cmd = m.loadWorktrees
+			cmd = m.showSuccessNotification("Branch checked out successfully", 3*time.Second)
+			return m, tea.Batch(
+				cmd,
+				m.loadWorktrees,
+			)
 		}
-		return m, cmd
 
 	case baseBranchLoadedMsg:
 		m.baseBranch = msg.branch
 		return m, nil
 
-	case clearErrorMsg:
-		m.err = nil
-		m.status = ""
+	case notificationHideMsg:
+		// Only handle if this is the current notification
+		if m.notification != nil && m.notification.ID == msg.id {
+			m.notificationVisible = false
+			return m, tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
+				return notificationClearedMsg{id: msg.id}
+			})
+		}
 		return m, nil
 
-	case statusMsg:
-		m.status = string(msg)
+	case notificationClearedMsg:
+		// Only clear if this is the current notification
+		if m.notification != nil && m.notification.ID == msg.id {
+			m.notification = nil
+		}
 		return m, nil
 
 	case sessionsLoadedMsg:
@@ -183,46 +162,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorOpenedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to open editor: " + msg.err.Error()
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to open editor: " + msg.err.Error(), 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Opened in editor"
-			m.err = nil
-			// Auto-clear status after 2 seconds
-			return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showSuccessNotification("Opened in editor", 3*time.Second)
+			return m, cmd
 		}
 
 	case prCreatedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to create PR: " + msg.err.Error()
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to create PR: " + msg.err.Error(), 4*time.Second)
+			return m, cmd
 		} else {
-			m.status = "Draft PR created: " + msg.prURL
-			m.err = nil
-			// Auto-clear status after 5 seconds
-			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showSuccessNotification("Draft PR created: " + msg.prURL, 5*time.Second)
+			return m, cmd
 		}
 
 	case commitCreatedMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to create commit: " + msg.err.Error()
-			// Auto-clear error after 4 seconds
-			return m, tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to create commit: " + msg.err.Error(), 4*time.Second)
+			return m, cmd
 		} else {
 			// Show success message with commit hash
 			if msg.commitHash != "" {
@@ -230,69 +189,47 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(msg.commitHash) > 8 {
 					hashDisplay = msg.commitHash[:8]
 				}
-				m.status = "Commit created: " + hashDisplay
+				cmd = m.showSuccessNotification("Commit created: " + hashDisplay, 3*time.Second)
 			} else {
-				m.status = "Commit created successfully"
+				cmd = m.showSuccessNotification("Commit created successfully", 3*time.Second)
 			}
-			m.err = nil
 			// Refresh worktree list to show clean state
-			cmd = m.loadWorktrees
-			// Auto-clear status after 3 seconds
-			return m, tea.Sequence(
+			return m, tea.Batch(
 				cmd,
-				tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				}),
+				m.loadWorktrees,
 			)
 		}
 
 	case branchPulledMsg:
 		if msg.err != nil {
-			m.err = msg.err
 			if msg.hadConflict {
 				// Show error with abort option
-				m.status = "Merge conflict! Run 'git merge --abort' in the worktree to abort."
+				cmd = m.showWarningNotification("Merge conflict! Run 'git merge --abort' in the worktree to abort.")
+				return m, cmd
 			} else {
-				m.status = "Failed to pull from base branch: " + msg.err.Error()
+				cmd = m.showErrorNotification("Failed to pull from base branch: " + msg.err.Error(), 5*time.Second)
+				return m, cmd
 			}
-			// Auto-clear error after 5 seconds
-			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
 		} else {
-			m.status = "Successfully pulled changes from base branch"
-			m.err = nil
+			cmd = m.showSuccessNotification("Successfully pulled changes from base branch", 3*time.Second)
 			// Refresh worktree list after successful pull
-			cmd = m.loadWorktrees
-			// Auto-clear status after 2 seconds
-			return m, tea.Sequence(
+			return m, tea.Batch(
 				cmd,
-				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				}),
+				m.loadWorktrees,
 			)
 		}
 
 	case refreshWithPullMsg:
 		if msg.err != nil {
-			m.err = msg.err
-			m.status = "Failed to refresh: " + msg.err.Error()
-			// Auto-clear error after 5 seconds
-			return m, tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-				return clearErrorMsg{}
-			})
+			cmd = m.showErrorNotification("Failed to refresh: " + msg.err.Error(), 5*time.Second)
+			return m, cmd
 		} else {
 			// Build detailed status message based on what was pulled
-			m.status = buildRefreshStatusMessage(msg)
-			m.err = nil
+			cmd = m.showSuccessNotification(buildRefreshStatusMessage(msg), 3*time.Second)
 			// Reload worktree list to show updated status
-			cmd = m.loadWorktrees
-			// Auto-clear status after 2 seconds
-			return m, tea.Sequence(
+			return m, tea.Batch(
 				cmd,
-				tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				}),
+				m.loadWorktrees,
 			)
 		}
 
@@ -319,6 +256,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -342,26 +280,26 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		m.status = "Pulling latest commits and refreshing..."
-		return m, m.refreshWithPull()
+		cmd = m.showInfoNotification("Pulling latest commits and refreshing...")
+		return m, tea.Batch(cmd, m.refreshWithPull())
 
 	case "n":
 		// Instantly create worktree with random branch name from base branch
 		randomName, err := m.gitManager.GenerateRandomName()
 		if err != nil {
-			m.status = "Failed to generate random name"
-			return m, nil
+			cmd = m.showWarningNotification("Failed to generate random name")
+			return m, cmd
 		}
 
 		// Generate random path
 		path, err := m.gitManager.GetDefaultPath(randomName)
 		if err != nil {
-			m.status = "Failed to generate workspace path"
-			return m, nil
+			cmd = m.showWarningNotification("Failed to generate workspace path")
+			return m, cmd
 		}
 
-		m.status = "Creating worktree with branch: " + randomName
-		return m, m.createWorktree(path, randomName, true)
+		cmd = m.showInfoNotification("Creating worktree with branch: " + randomName)
+		return m, tea.Batch(cmd, m.createWorktree(path, randomName, true))
 
 	case "b":
 		// Open change base branch modal (b for base branch)
@@ -391,8 +329,8 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Check for uncommitted changes
 			hasUncommitted, err := m.gitManager.HasUncommittedChanges(wt.Path)
 			if err != nil {
-				m.status = "Failed to check for uncommitted changes"
-				return m, nil
+				cmd = m.showWarningNotification("Failed to check for uncommitted changes")
+				return m, cmd
 			}
 			m.deleteHasUncommitted = hasUncommitted
 			m.deleteConfirmForce = false
@@ -400,7 +338,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modalFocused = 0
 			return m, nil
 		} else if wt != nil && wt.IsCurrent {
-			m.status = "Cannot delete current worktree"
+			return m, m.showWarningNotification("Cannot delete current worktree")
 		}
 
 	case "enter":
@@ -424,8 +362,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if wt := m.selectedWorktree(); wt != nil {
 			// Check if this is a workspace worktree (in .workspaces directory)
 			if !strings.Contains(wt.Path, ".workspaces") {
-				m.status = "Cannot rename main branch. Only workspace branches can be renamed."
-				return m, nil
+				return m, m.showWarningNotification("Cannot rename main branch. Only workspace branches can be renamed.")
 			}
 			m.modal = renameModal
 			m.modalFocused = 0
@@ -464,8 +401,8 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		// Open worktree in default IDE
 		if wt := m.selectedWorktree(); wt != nil {
-			m.status = "Opening in editor..."
-			return m, m.openInEditor(wt.Path)
+			cmd = m.showInfoNotification("Opening in editor...")
+			return m, tea.Batch(cmd, m.openInEditor(wt.Path))
 		}
 
 	case "e":
@@ -505,31 +442,28 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if wt := m.selectedWorktree(); wt != nil {
 			// Check if base branch is set
 			if m.baseBranch == "" {
-				m.status = "Base branch not set. Press 'c' to set base branch"
-				return m, nil
+				return m, m.showWarningNotification("Base branch not set. Press 'b' to set base branch")
 			}
 
 			// Only allow pull if worktree is behind
 			if !wt.IsOutdated || wt.BehindCount == 0 {
-				m.status = "Worktree is already up-to-date with base branch"
-				return m, nil
+				return m, m.showInfoNotification("Worktree is already up-to-date with base branch")
 			}
 
 			// Don't allow pull on main worktree
 			if !strings.Contains(wt.Path, ".workspaces") {
-				m.status = "Cannot pull on main worktree. Use 'git pull' manually."
-				return m, nil
+				return m, m.showWarningNotification("Cannot pull on main worktree. Use 'git pull' manually.")
 			}
 
-			m.status = "Pulling changes from base branch..."
-			return m, m.pullFromBaseBranch(wt.Path, m.baseBranch)
+			cmd = m.showInfoNotification("Pulling changes from base branch...")
+			return m, tea.Batch(cmd, m.pullFromBaseBranch(wt.Path, m.baseBranch))
 		}
 
 	case "P":
 		// Create draft PR (push + open PR) (Shift+P)
 		if wt := m.selectedWorktree(); wt != nil {
-			m.status = "Creating draft PR..."
-			return m, m.createPR(wt.Path, wt.Branch)
+			cmd = m.showInfoNotification("Creating draft PR...")
+			return m, tea.Batch(cmd, m.createPR(wt.Path, wt.Branch))
 		}
 
 	case "C":
@@ -538,19 +472,11 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Check if worktree has uncommitted changes
 			hasUncommitted, err := m.gitManager.HasUncommittedChanges(wt.Path)
 			if err != nil {
-				m.err = err
-				m.status = "Failed to check for uncommitted changes: " + err.Error()
-				// Auto-clear error after 3 seconds
-				return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				})
+				return m, m.showErrorNotification("Failed to check for uncommitted changes: " + err.Error(), 3*time.Second)
 			}
 			if !hasUncommitted {
-				m.status = "Nothing to commit - no uncommitted changes in " + wt.Branch
-				// Auto-clear status after 3 seconds
-				return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
-					return clearErrorMsg{}
-				})
+				cmd = m.showInfoNotification("Nothing to commit - no uncommitted changes in " + wt.Branch)
+				return m, cmd
 			}
 			m.modal = commitModal
 			m.modalFocused = 0
@@ -841,16 +767,14 @@ func (m Model) handleDeleteModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if m.modalFocused == 2 || msg.String() == "f" {
 				// User clicked "Force Delete" - set confirmation flag
 				m.deleteConfirmForce = true
-				m.status = "Press 'y' or Enter to confirm force delete"
-				return m, nil
+				return m, m.showWarningNotification("Press 'y' or Enter to confirm force delete")
 			} else if m.modalFocused == 1 || msg.String() == "n" {
 				// User clicked "No" - cancel
 				m.modal = noModal
 				return m, nil
 			} else if m.modalFocused == 0 {
 				// User tried to click "Yes" but it's blocked
-				m.status = "Cannot delete: uncommitted changes. Use 'Force Delete' to proceed."
-				return m, nil
+				return m, m.showWarningNotification("Cannot delete: uncommitted changes. Use 'Force Delete' to proceed.")
 			}
 		} else if m.deleteHasUncommitted && m.deleteConfirmForce {
 			// User already confirmed, now execute force delete
@@ -878,8 +802,7 @@ func (m Model) handleDeleteModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Shortcut for "Force Delete"
 		if m.deleteHasUncommitted && !m.deleteConfirmForce {
 			m.deleteConfirmForce = true
-			m.status = "Press 'y' or Enter to confirm force delete"
-			return m, nil
+			return m, m.showWarningNotification("Press 'y' or Enter to confirm force delete")
 		}
 	}
 
@@ -892,8 +815,8 @@ func (m Model) handleBranchSelectModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 			// Generate random path
 			path, err := m.gitManager.GetDefaultPath(branch)
 			if err != nil {
-				m.status = "Failed to generate workspace path"
-				return m, nil
+				cmd := m.showWarningNotification("Failed to generate workspace path")
+				return m, cmd
 			}
 			return m, m.createWorktree(path, branch, false)
 		},
@@ -904,8 +827,8 @@ func (m Model) handleBranchSelectModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 func (m Model) handleCheckoutBranchModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	config := searchModalConfig{
 		onConfirm: func(m Model, branch string) (tea.Model, tea.Cmd) {
-			m.status = "Checking out branch: " + branch
-			return m, m.checkoutBranch(branch)
+			cmd := m.showInfoNotification("Checking out branch: " + branch)
+			return m, tea.Batch(cmd, m.checkoutBranch(branch))
 		},
 	}
 	return m.handleSearchBasedModalInput(msg, config)
@@ -922,7 +845,7 @@ func (m Model) handleSessionListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				sess := m.sessions[m.sessionIndex]
 				// Attach via tmux
 				if err := m.sessionManager.Attach(sess.Name); err != nil {
-					m.status = "Failed to attach to session"
+					m.showErrorNotification("Failed to attach to session", 3*time.Second)
 					return m, nil
 				}
 				return m, tea.Quit
@@ -934,9 +857,9 @@ func (m Model) handleSessionListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) 
 				// Kill selected session
 				sess := m.sessions[m.sessionIndex]
 				if err := m.sessionManager.Kill(sess.Name); err != nil {
-					m.status = "Failed to kill session"
+					m.showErrorNotification("Failed to kill session", 3*time.Second)
 				} else {
-					m.status = "Session killed"
+					m.showSuccessNotification("Session killed", 3*time.Second)
 					// Reload sessions
 					return m, m.loadSessions
 				}
@@ -969,29 +892,29 @@ func (m Model) handleRenameModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Rename button or enter in input
 			newName := m.nameInput.Value()
 			if newName == "" {
-				m.status = "Branch name cannot be empty"
-				return m, nil
+				cmd := m.showWarningNotification("Branch name cannot be empty")
+				return m, cmd
 			}
 
 			// Sanitize branch name
 			newName = git.SanitizeBranchName(newName)
 			if newName == "" {
-				m.status = "Branch name cannot be empty after sanitization"
-				return m, nil
+				cmd := m.showWarningNotification("Branch name cannot be empty after sanitization")
+				return m, cmd
 			}
 
 			if wt := m.selectedWorktree(); wt != nil {
 				if newName == wt.Branch {
-					m.status = "Branch name unchanged"
+					cmd := m.showInfoNotification("Branch name unchanged")
 					m.modal = noModal
 					m.nameInput.Blur()
-					return m, nil
+					return m, cmd
 				}
 
-				m.status = fmt.Sprintf("Renaming branch to '%s'...", newName)
+				cmd := m.showInfoNotification(fmt.Sprintf("Renaming branch to '%s'...", newName))
 				m.modal = noModal
 				m.nameInput.Blur()
-				return m, m.renameBranch(wt.Branch, newName)
+				return m, tea.Batch(cmd, m.renameBranch(wt.Branch, newName))
 			}
 		} else if m.modalFocused == 2 {
 			// Cancel button
@@ -1014,18 +937,19 @@ func (m Model) handleChangeBaseBranchModalInput(msg tea.KeyMsg) (tea.Model, tea.
 	config := searchModalConfig{
 		onConfirm: func(m Model, branch string) (tea.Model, tea.Cmd) {
 			m.baseBranch = branch
+			var cmd tea.Cmd
 
 			// Save to config
 			if m.configManager != nil {
 				if err := m.configManager.SetBaseBranch(m.repoPath, branch); err != nil {
-					m.status = "Base branch set to: " + branch + " (warning: failed to save)"
+					cmd = m.showWarningNotification("Base branch set to: " + branch + " (warning: failed to save)")
 				} else {
-					m.status = "Base branch set to: " + branch + " (saved)"
+					cmd = m.showSuccessNotification("Base branch set to: " + branch, 3*time.Second)
 				}
 			} else {
-				m.status = "Base branch set to: " + branch
+				cmd = m.showInfoNotification("Base branch set to: " + branch)
 			}
-			return m, nil
+			return m, cmd
 		},
 	}
 	return m.handleSearchBasedModalInput(msg, config)
@@ -1072,17 +996,17 @@ func (m Model) handleCommitModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Commit button
 			subject := m.commitSubjectInput.Value()
 			if subject == "" {
-				m.status = "Commit subject cannot be empty"
-				return m, nil
+				cmd := m.showWarningNotification("Commit subject cannot be empty")
+				return m, cmd
 			}
 
 			body := m.commitBodyInput.Value()
 			if wt := m.selectedWorktree(); wt != nil {
-				m.status = "Creating commit..."
+				cmd := m.showInfoNotification("Creating commit...")
 				m.modal = noModal
 				m.commitSubjectInput.Blur()
 				m.commitBodyInput.Blur()
-				return m, m.createCommit(wt.Path, subject, body)
+				return m, tea.Batch(cmd, m.createCommit(wt.Path, subject, body))
 			}
 		} else {
 			// Cancel button
@@ -1115,10 +1039,9 @@ func (m Model) handleEditorSelectModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd)
 				selectedEditor := m.editors[m.editorIndex]
 				if m.configManager != nil {
 					if err := m.configManager.SetEditor(m.repoPath, selectedEditor); err != nil {
-						m.err = err
-						m.status = "Failed to save editor preference"
+						m.showErrorNotification("Failed to save editor preference", 3*time.Second)
 					} else {
-						m.status = "Editor set to: " + selectedEditor
+						m.showSuccessNotification("Editor set to: " + selectedEditor, 3*time.Second)
 					}
 				}
 			}
@@ -1218,7 +1141,7 @@ func (m Model) handleTmuxConfigModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 		hasConfig, err := m.sessionManager.HasGcoolTmuxConfig()
 		if err != nil {
-			m.status = "Error checking tmux config: " + err.Error()
+			m.showErrorNotification("Error checking tmux config: " + err.Error(), 3*time.Second)
 			m.modal = settingsModal
 			return m, nil
 		}
@@ -1229,16 +1152,16 @@ func (m Model) handleTmuxConfigModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case 0:
 				// Update button - reinstalls config (remove + add)
 				if err := m.sessionManager.AddGcoolTmuxConfig(); err != nil {
-					m.status = "Failed to update tmux config: " + err.Error()
+					m.showErrorNotification("Failed to update tmux config: " + err.Error(), 3*time.Second)
 				} else {
-					m.status = "gcool tmux config updated! New tmux sessions will use the updated config."
+					m.showSuccessNotification("gcool tmux config updated! New tmux sessions will use the updated config.", 3*time.Second)
 				}
 			case 1:
 				// Remove button
 				if err := m.sessionManager.RemoveGcoolTmuxConfig(); err != nil {
-					m.status = "Failed to remove tmux config: " + err.Error()
+					m.showErrorNotification("Failed to remove tmux config: " + err.Error(), 3*time.Second)
 				} else {
-					m.status = "gcool tmux config removed. New tmux sessions will use your default config."
+					m.showSuccessNotification("gcool tmux config removed. New tmux sessions will use your default config.", 3*time.Second)
 				}
 			case 2:
 				// Cancel button - do nothing
@@ -1249,9 +1172,9 @@ func (m Model) handleTmuxConfigModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case 0:
 				// Install button
 				if err := m.sessionManager.AddGcoolTmuxConfig(); err != nil {
-					m.status = "Failed to add tmux config: " + err.Error()
+					m.showErrorNotification("Failed to add tmux config: " + err.Error(), 3*time.Second)
 				} else {
-					m.status = "gcool tmux config installed! New tmux sessions will use this config."
+					m.showSuccessNotification("gcool tmux config installed! New tmux sessions will use this config.", 3*time.Second)
 				}
 			case 1:
 				// Cancel button - do nothing

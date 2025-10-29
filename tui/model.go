@@ -40,6 +40,25 @@ const (
 	helperModal
 )
 
+// NotificationType defines the type of notification
+type NotificationType int
+
+const (
+	NotificationSuccess NotificationType = iota
+	NotificationError
+	NotificationWarning
+	NotificationInfo
+)
+
+// Notification represents a notification message to display
+type Notification struct {
+	ID       int64             // Unique ID to identify this notification
+	Message  string
+	Type     NotificationType
+	Duration time.Duration     // How long to display before auto-dismiss (0 = no auto-dismiss)
+	Timestamp time.Time
+}
+
 // Model represents the TUI state
 type Model struct {
 	gitManager     *git.Manager
@@ -62,6 +81,12 @@ type Model struct {
 	switchInfo      SwitchInfo // Info about worktree to switch to
 	autoClaude      bool       // Whether to auto-start Claude
 	baseBranch      string     // Base branch for new worktrees
+
+	// Notification system
+	notification         *Notification    // Current displayed notification
+	notificationVisible  bool
+	notificationStarted  time.Time
+	notificationID       int64             // Counter for unique notification IDs
 
 	// Branch status tracking
 	lastCreatedBranch string // Last created branch name (for auto-selection after creation)
@@ -237,6 +262,16 @@ type (
 	commitCreatedMsg struct {
 		err        error
 		commitHash string
+	}
+
+	notificationShownMsg struct{}
+
+	notificationHideMsg struct {
+		id int64
+	}
+
+	notificationClearedMsg struct {
+		id int64
 	}
 )
 
@@ -558,4 +593,66 @@ func (m Model) checkSessionActivity() tea.Cmd {
 		}
 		return activityCheckedMsg{sessions: sessions, err: nil}
 	}
+}
+
+// showNotification displays a notification and optionally schedules it to be hidden after a duration
+func (m *Model) showNotification(message string, notifType NotificationType, autoClearAfter *time.Duration) tea.Cmd {
+	// Generate unique ID for this notification
+	m.notificationID++
+	notifID := m.notificationID
+
+	notif := &Notification{
+		ID:        notifID,
+		Message:   message,
+		Type:      notifType,
+		Timestamp: time.Now(),
+	}
+
+	// If we have a duration, store it
+	if autoClearAfter != nil && *autoClearAfter > 0 {
+		notif.Duration = *autoClearAfter
+	}
+
+	// Replace any existing notification (no queueing)
+	m.notification = notif
+	m.notificationVisible = true
+	m.notificationStarted = time.Now()
+
+	if autoClearAfter != nil && *autoClearAfter > 0 {
+		return m.scheduleNotificationHide(notifID, *autoClearAfter)
+	}
+	return nil
+}
+
+// Helper methods for common notification types
+
+// showSuccessNotification displays a success notification with auto-clear (2 seconds)
+func (m *Model) showSuccessNotification(message string, autoClearAfter time.Duration) tea.Cmd {
+	return m.showNotification(message, NotificationSuccess, &autoClearAfter)
+}
+
+// showErrorNotification displays an error notification with auto-clear (5 seconds)
+func (m *Model) showErrorNotification(message string, autoClearAfter time.Duration) tea.Cmd {
+	return m.showNotification(message, NotificationError, &autoClearAfter)
+}
+
+// showWarningNotification displays a warning notification (3 seconds auto-clear)
+func (m *Model) showWarningNotification(message string) tea.Cmd {
+	duration := 3 * time.Second
+	return m.showNotification(message, NotificationWarning, &duration)
+}
+
+// showInfoNotification displays an info notification (3 seconds auto-clear)
+func (m *Model) showInfoNotification(message string) tea.Cmd {
+	duration := 3 * time.Second
+	return m.showNotification(message, NotificationInfo, &duration)
+}
+
+// scheduleNotificationHide schedules the notification to be hidden after specified duration
+func (m Model) scheduleNotificationHide(id int64, duration time.Duration) tea.Cmd {
+	return tea.Sequence(
+		tea.Tick(duration, func(t time.Time) tea.Msg {
+			return notificationHideMsg{id: id}
+		}),
+	)
 }

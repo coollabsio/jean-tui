@@ -1,0 +1,88 @@
+Line,Assignment_Type,Message_Category,Message_Text,Duration,Handler_Context,Suggested_Type,Notes
+35,m.status,Error,"Failed to load worktrees",4s,worktreesLoadedMsg,NotificationError,Async operation failure
+42,m.status,Clear,"",N/A,worktreesLoadedMsg success,N/A,Clear status on success
+43,m.err,Clear,nil,N/A,worktreesLoadedMsg success,N/A,Clear error on success
+74,m.err,Error,msg.err,4s,branchesLoadedMsg,NotificationError,Async operation failure
+75,m.status,Error,"Failed to load branches",4s,branchesLoadedMsg,NotificationError,Async operation failure
+82,m.err,Clear,nil,N/A,branchesLoadedMsg success,N/A,Clear error on success
+88,m.err,Error,msg.err,4s,worktreeCreatedMsg,NotificationError,Async operation failure
+89,m.status,Error,"Failed to create worktree",4s,worktreeCreatedMsg,NotificationError,Async operation failure
+95,m.status,Success,"Worktree created successfully",2s,worktreeCreatedMsg,NotificationSuccess,Successful async operation
+116,m.err,Error,msg.err,4s,worktreeDeletedMsg,NotificationError,Async operation failure
+117,m.status,Error,"Failed to delete worktree",4s,worktreeDeletedMsg,NotificationError,Async operation failure
+123,m.status,Success,"Worktree deleted successfully",N/A,worktreeDeletedMsg,NotificationSuccess,Successful async operation - no explicit auto-clear
+137,m.err,Error,msg.err,4s,branchRenamedMsg,NotificationError,Async operation failure
+138,m.status,Error,"Failed to rename branch",4s,branchRenamedMsg,NotificationError,Async operation failure
+144,m.status,Success,"Branch renamed successfully",N/A,branchRenamedMsg,NotificationSuccess,Successful async operation - no explicit auto-clear
+155,m.err,Error,msg.err,4s,branchCheckedOutMsg,NotificationError,Async operation failure
+156,m.status,Error,"Failed to checkout branch",4s,branchCheckedOutMsg,NotificationError,Async operation failure
+162,m.status,Success,"Branch checked out successfully",N/A,branchCheckedOutMsg,NotificationSuccess,Successful async operation - no explicit auto-clear
+172,m.err,Clear,nil,N/A,clearErrorMsg,N/A,Explicit error clear handler
+173,m.status,Clear,"",N/A,clearErrorMsg,N/A,Clear status on auto-clear timeout
+177,m.status,Generic,string(msg),N/A,statusMsg,Generic,Pass-through generic message
+186,m.err,Error,msg.err,4s,editorOpenedMsg,NotificationError,Async operation failure
+187,m.status,Error,"Failed to open editor: " + msg.err.Error(),4s,editorOpenedMsg,NotificationError,Async operation failure - includes error details
+193,m.status,Success,"Opened in editor",2s,editorOpenedMsg,NotificationSuccess,Successful async operation
+194,m.err,Clear,nil,N/A,editorOpenedMsg success,N/A,Clear error on success
+203,m.err,Error,msg.err,4s,prCreatedMsg,NotificationError,Async operation failure
+204,m.status,Error,"Failed to create PR: " + msg.err.Error(),4s,prCreatedMsg,NotificationError,Async operation failure - includes error details
+210,m.status,Success,"Draft PR created: " + msg.prURL,5s,prCreatedMsg,NotificationSuccess,Successful async operation with dynamic URL
+211,m.err,Clear,nil,N/A,prCreatedMsg success,N/A,Clear error on success
+220,m.err,Error,msg.err,4s,commitCreatedMsg,NotificationError,Async operation failure
+221,m.status,Error,"Failed to create commit: " + msg.err.Error(),4s,commitCreatedMsg,NotificationError,Async operation failure - includes error details
+233,m.status,Success,"Commit created: " + hashDisplay,3s,commitCreatedMsg,NotificationSuccess,Successful async operation with commit hash
+235,m.status,Success,"Commit created successfully",3s,commitCreatedMsg,NotificationSuccess,Fallback when hash unavailable
+237,m.err,Clear,nil,N/A,commitCreatedMsg success,N/A,Clear error on success
+251,m.err,Error,msg.err,5s,branchPulledMsg,NotificationError,Async operation failure or conflict
+254,m.status,Warning,"Merge conflict! Run 'git merge --abort' in the worktree to abort.",5s,branchPulledMsg,NotificationWarning,Merge conflict - special error case
+256,m.status,Error,"Failed to pull from base branch: " + msg.err.Error(),5s,branchPulledMsg,NotificationError,Async operation failure - includes error details
+263,m.status,Success,"Successfully pulled changes from base branch",2s,branchPulledMsg,NotificationSuccess,Successful async operation
+264,m.err,Clear,nil,N/A,branchPulledMsg success,N/A,Clear error on success
+278,m.err,Error,msg.err,5s,refreshWithPullMsg,NotificationError,Async operation failure
+279,m.status,Error,"Failed to refresh: " + msg.err.Error(),5s,refreshWithPullMsg,NotificationError,Async operation failure - includes error details
+286,m.status,Success,buildRefreshStatusMessage(msg),2s,refreshWithPullMsg,NotificationSuccess,Successful async operation - dynamic message from function
+287,m.err,Clear,nil,N/A,refreshWithPullMsg success,N/A,Clear error on success
+345,m.status,Info,"Pulling latest commits and refreshing...",N/A,'r' keybinding,NotificationInfo,Operation initiated - persists
+352,m.status,Error,"Failed to generate random name",N/A,'n' keybinding,NotificationError,Validation failure - synchronous
+359,m.status,Error,"Failed to generate workspace path",N/A,'n' keybinding,NotificationError,Validation failure - synchronous
+363,m.status,Info,"Creating worktree with branch: " + randomName,N/A,'n' keybinding,NotificationInfo,Operation initiated - persists
+394,m.status,Error,"Failed to check for uncommitted changes",N/A,'d' keybinding,NotificationError,Validation failure - synchronous
+403,m.status,Warning,"Cannot delete current worktree",N/A,'d' keybinding,NotificationWarning,Safety check - persists
+427,m.status,Warning,"Cannot rename main branch. Only workspace branches can be renamed.",N/A,'R' keybinding,NotificationWarning,Safety check - persists
+467,m.status,Info,"Opening in editor...",N/A,'o' keybinding,NotificationInfo,Operation initiated - persists
+508,m.status,Warning,"Base branch not set. Press 'c' to set base branch",N/A,'p' keybinding,NotificationWarning,Safety check - requires user action
+514,m.status,Info,"Worktree is already up-to-date with base branch",N/A,'p' keybinding,NotificationInfo,Status check - persists
+520,m.status,Warning,"Cannot pull on main worktree. Use 'git pull' manually.",N/A,'p' keybinding,NotificationWarning,Safety check - persists
+524,m.status,Info,"Pulling changes from base branch...",N/A,'p' keybinding,NotificationInfo,Operation initiated - persists
+531,m.status,Info,"Creating draft PR...",N/A,'P' keybinding,NotificationInfo,Operation initiated - persists
+541,m.err,Error,err,3s,'C' keybinding,NotificationError,Validation failure with auto-clear
+542,m.status,Error,"Failed to check for uncommitted changes: " + err.Error(),3s,'C' keybinding,NotificationError,Validation failure - includes error details
+549,m.status,Info,"Nothing to commit - no uncommitted changes in " + wt.Branch,3s,'C' keybinding,NotificationInfo,Status check with auto-clear
+794,m.status,Error,"Branch name is required",N/A,Create modal,NotificationError,Validation failure - synchronous
+801,m.status,Error,"Failed to generate workspace path",N/A,Create modal,NotificationError,Validation failure - synchronous
+844,m.status,Warning,"Press 'y' or Enter to confirm force delete",N/A,Delete modal,NotificationWarning,Confirmation prompt - persists
+852,m.status,Warning,"Cannot delete: uncommitted changes. Use 'Force Delete' to proceed.",N/A,Delete modal,NotificationWarning,Safety check - requires user action
+895,m.status,Error,"Failed to generate workspace path",N/A,Branch select modal,NotificationError,Validation failure - synchronous
+907,m.status,Info,"Checking out branch: " + branch,N/A,Checkout branch modal,NotificationInfo,Operation initiated - persists
+925,m.status,Error,"Failed to attach to session",N/A,Session list modal,NotificationError,Operation failure - synchronous
+937,m.status,Error,"Failed to kill session",N/A,Session list modal,NotificationError,Operation failure - synchronous
+939,m.status,Success,"Session killed",N/A,Session list modal,NotificationSuccess,Successful operation - synchronous
+972,m.status,Error,"Branch name cannot be empty",N/A,Rename modal,NotificationError,Validation failure - synchronous
+979,m.status,Error,"Branch name cannot be empty after sanitization",N/A,Rename modal,NotificationError,Validation failure - synchronous
+985,m.status,Info,"Branch name unchanged",N/A,Rename modal,NotificationInfo,Status check - persists
+991,m.status,Info,"Renaming branch to '{newName}'...",N/A,Rename modal,NotificationInfo,Operation initiated - persists
+1021,m.status,Warning,"Base branch set to: " + branch + " (warning: failed to save)",N/A,Change base branch,NotificationWarning,Partial success with save warning
+1023,m.status,Success,"Base branch set to: " + branch + " (saved)",N/A,Change base branch,NotificationSuccess,Successful operation - persists
+1026,m.status,Success,"Base branch set to: " + branch,N/A,Change base branch,NotificationSuccess,Successful operation - persists
+1075,m.status,Error,"Commit subject cannot be empty",N/A,Commit modal,NotificationError,Validation failure - synchronous
+1081,m.status,Info,"Creating commit...",N/A,Commit modal,NotificationInfo,Operation initiated - persists
+1118,m.err,Error,err,N/A,Editor select modal,NotificationError,Operation failure - synchronous
+1119,m.status,Error,"Failed to save editor preference",N/A,Editor select modal,NotificationError,Operation failure - synchronous
+1121,m.status,Success,"Editor set to: " + selectedEditor,N/A,Editor select modal,NotificationSuccess,Successful operation - persists
+1221,m.status,Error,"Error checking tmux config: " + err.Error(),N/A,Tmux config modal,NotificationError,Operation failure - includes error details
+1232,m.status,Error,"Failed to update tmux config: " + err.Error(),N/A,Tmux config modal,NotificationError,Operation failure - includes error details
+1234,m.status,Success,"gcool tmux config updated! New tmux sessions will use the updated config.",N/A,Tmux config modal,NotificationSuccess,Successful operation - persists
+1239,m.status,Error,"Failed to remove tmux config: " + err.Error(),N/A,Tmux config modal,NotificationError,Operation failure - includes error details
+1241,m.status,Success,"gcool tmux config removed. New tmux sessions will use your default config.",N/A,Tmux config modal,NotificationSuccess,Successful operation - persists
+1252,m.status,Error,"Failed to add tmux config: " + err.Error(),N/A,Tmux config modal,NotificationError,Operation failure - includes error details
+1254,m.status,Success,"gcool tmux config installed! New tmux sessions will use this config.",N/A,Tmux config modal,NotificationSuccess,Successful operation - persists

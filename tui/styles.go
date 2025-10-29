@@ -146,4 +146,37 @@ var (
 				Foreground(lipgloss.Color("#333333")).
 				Padding(0, 3).
 				MarginRight(2)
+
+	// Notification styles
+	successNotifStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#00FF41")).
+				Padding(0, 1).
+				Margin(0, 0, 1, 0).
+				Border(lipgloss.NormalBorder(), true, true, true, true).
+				BorderForeground(lipgloss.Color("#008F11"))
+
+	errorNotifStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(lipgloss.Color("#FF0000")).
+			Padding(0, 1).
+			Margin(0, 0, 1, 0).
+			Border(lipgloss.DoubleBorder(), true, true, true, true).
+			BorderForeground(lipgloss.Color("#AA0000"))
+
+	warningNotifStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#000000")).
+				Background(lipgloss.Color("#FFA500")).
+				Padding(0, 1).
+				Margin(0, 0, 1, 0).
+				Border(lipgloss.RoundedBorder(), true, true, true, true).
+				BorderForeground(lipgloss.Color("#FF8C00"))
+
+	infoNotifStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#000000")).
+			Background(lipgloss.Color("#00FFFF")).
+			Padding(0, 1).
+			Margin(0, 0, 1, 0).
+			Border(lipgloss.NormalBorder(), true, true, true, true).
+			BorderForeground(lipgloss.Color("#0088AA"))
 )

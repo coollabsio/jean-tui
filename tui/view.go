@@ -24,14 +24,9 @@ func (m Model) View() string {
 	rightPanel := m.renderDetails()
 
 	// Calculate panel dimensions
-	// Allocate more space for help bar (now 2 rows + possible status)
-	helpBarHeight := 3 // 2 rows of help + 1 for spacing
-	if m.status != "" {
-		helpBarHeight = 4 // status + 2 rows of help + spacing
-	}
+	panelHeight := m.height - 2 // Base height with some padding
 
 	panelWidth := (m.width - 6) / 2
-	panelHeight := m.height - helpBarHeight - 2
 
 	// Style panels
 	leftPanelStyled := activePanelStyle.
@@ -44,14 +39,17 @@ func (m Model) View() string {
 		Height(panelHeight).
 		Render(rightPanel)
 
-	// Combine panels
+	// Combine panels horizontally
 	panels := lipgloss.JoinHorizontal(lipgloss.Top, leftPanelStyled, rightPanelStyled)
 
-	// Render help bar
-	helpBar := m.renderHelpBar()
+	// If notification exists, render it as an overlay on top of panels
+	if m.notification != nil {
+		notification := m.renderNotification()
+		// Position notification at the bottom center as an overlay
+		return m.renderNotificationOverlay(panels, notification)
+	}
 
-	// Combine everything
-	return lipgloss.JoinVertical(lipgloss.Left, panels, helpBar)
+	return panels
 }
 
 func (m Model) renderWorktreeList() string {
@@ -229,46 +227,85 @@ func (m Model) renderDetails() string {
 	return b.String()
 }
 
-func (m Model) renderHelpBar() string {
-	if m.err != nil {
-		return errorStyle.Render(fmt.Sprintf(" Error: %s ", m.err.Error()))
+func (m Model) renderNotification() string {
+	if m.notification == nil {
+		return ""
 	}
 
-	var statusLine string
-	if m.status != "" {
-		statusLine = helpStyle.Render(" " + statusStyle.Render(m.status) + " ")
+	// Determine icon based on notification type
+	var icon string
+	var style lipgloss.Style
+	switch m.notification.Type {
+	case NotificationSuccess:
+		icon = "✓"
+		style = successNotifStyle
+	case NotificationError:
+		icon = "✗"
+		style = errorNotifStyle
+	case NotificationWarning:
+		icon = "⚠"
+		style = warningNotifStyle
+	case NotificationInfo:
+		icon = "ℹ"
+		style = infoNotifStyle
+	default:
+		icon = "•"
+		style = infoNotifStyle
 	}
 
-	// Split keybindings into two rows
-	row1 := []string{
-		"↑/↓ navigate",
-		"n new",
-		"a existing",
-		"C commit",
-		"p pull",
-		"P push & PR",
-		"o open",
+	message := fmt.Sprintf("%s %s", icon, m.notification.Message)
+	// Apply width (60% of screen width), padding, and ensure border is visible
+	notifWidth := int(float64(m.width) * 0.6)
+	if notifWidth < 40 {
+		notifWidth = 40
+	}
+	return style.
+		Width(notifWidth).
+		Padding(0, 1).
+		Render(message)
+}
+
+// renderNotificationOverlay renders the notification as an overlay on top of the main view
+func (m Model) renderNotificationOverlay(baseView, notification string) string {
+	// Split the base view into lines
+	lines := strings.Split(baseView, "\n")
+
+	// Get notification dimensions
+	notificationLines := strings.Split(notification, "\n")
+	notificationWidth := lipgloss.Width(notification)
+
+	// Calculate position: bottom with padding (last few lines)
+	positionY := len(lines) - len(notificationLines) - 1
+	if positionY < 0 {
+		positionY = 0
 	}
 
-	row2 := []string{
-		"r refresh",
-		"R rename",
-		"d delete",
-		"b base",
-		"B checkout",
-		"s settings",
-		"S sessions",
-		"h help",
-		"q quit",
+	// Center horizontally - add padding to center the notification
+	leftPadding := (m.width - notificationWidth) / 2
+	if leftPadding < 0 {
+		leftPadding = 0
 	}
 
-	help1 := helpStyle.Render(" " + strings.Join(row1, " • ") + " ")
-	help2 := helpStyle.Render(" " + strings.Join(row2, " • ") + " ")
-
-	if statusLine != "" {
-		return statusLine + "\n" + help1 + "\n" + help2
+	// Build the output by overlaying notification (replace lines, don't add)
+	var output strings.Builder
+	for i, line := range lines {
+		if i >= positionY && i < positionY+len(notificationLines) {
+			// Replace this line with notification line
+			notifLineIdx := i - positionY
+			if notifLineIdx < len(notificationLines) {
+				paddingStr := strings.Repeat(" ", leftPadding)
+				output.WriteString(paddingStr)
+				output.WriteString(notificationLines[notifLineIdx])
+				output.WriteString("\n")
+			}
+		} else {
+			// Write the original line
+			output.WriteString(line)
+			output.WriteString("\n")
+		}
 	}
-	return help1 + "\n" + help2
+
+	return strings.TrimRight(output.String(), "\n")
 }
 
 func (m Model) renderModal() string {

@@ -109,7 +109,7 @@ func (m Model) renderWorktreeList() string {
 		// For current worktree, show it's the main repo
 		var line string
 		if wt.IsCurrent {
-			line = fmt.Sprintf("%smain (branch: %s)", icon, branch)
+			line = fmt.Sprintf("%sroot (branch: %s)", icon, branch)
 		} else {
 			line = fmt.Sprintf("%s%s", icon, branch)
 

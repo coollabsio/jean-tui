@@ -612,7 +612,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		cmd = m.showInfoNotification("Pulling latest commits and refreshing...")
-		return m, tea.Batch(cmd, m.refreshWithPull(), m.refreshPRStatuses())
+		return m, tea.Batch(cmd, m.refreshWithPull(), m.refreshPRStatuses(), m.checkSessionActivity())
 
 	case "n":
 		// Instantly create worktree with random branch name from base branch

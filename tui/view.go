@@ -769,6 +769,12 @@ func (m Model) renderSessionListModal() string {
 				statusText = " (attached)"
 			}
 
+			// Determine session type
+			sessionTypeIcon := "🤖"  // Claude session (default)
+			if strings.HasSuffix(sess.Name, "-terminal") {
+				sessionTypeIcon = "⌨️ " // Terminal session
+			}
+
 			var style lipgloss.Style
 			if i == m.sessionIndex {
 				style = selectedItemStyle
@@ -776,7 +782,7 @@ func (m Model) renderSessionListModal() string {
 				style = normalItemStyle
 			}
 
-			line := fmt.Sprintf("%s %s%s", statusIcon, sess.Branch, statusText)
+			line := fmt.Sprintf("%s %s %s%s", statusIcon, sessionTypeIcon, sess.Branch, statusText)
 			b.WriteString(style.Render(line))
 			b.WriteString("\n")
 		}

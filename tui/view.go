@@ -201,7 +201,7 @@ func (m Model) renderDetails() string {
 		b.WriteString(normalItemStyle.Copy().Foreground(warningColor).Render("  ● Uncommitted changes"))
 		b.WriteString("\n")
 		if !wt.IsCurrent {
-			b.WriteString(normalItemStyle.Copy().Foreground(accentColor).Render("  Press 'C' to commit"))
+			b.WriteString(normalItemStyle.Copy().Foreground(accentColor).Render("  Press 'c' to commit"))
 			b.WriteString("\n")
 		}
 	}
@@ -1636,7 +1636,7 @@ func (m Model) renderHelperModal() string {
 			}{
 				{"b", "Change base branch for new worktrees"},
 				{"B", "Checkout/switch branch in main repo"},
-				{"C", "Commit all uncommitted changes"},
+				{"c", "Commit all uncommitted changes"},
 				{"p", "Merge base branch into current worktree"},
 				{"P", "Push & create draft PR"},
 				{"v", "Open PR in browser"},

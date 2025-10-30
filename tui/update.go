@@ -555,6 +555,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case commitMessageGeneratedMsg:
 		m.generatingCommit = false // Stop spinner animation
 		if msg.err != nil {
+			// If auto-committing with AI, show error and abort
+			if m.autoCommitWithAI {
+				m.autoCommitWithAI = false
+				cmd := m.showErrorNotification("Failed to generate commit message: " + msg.err.Error(), 4*time.Second)
+				return m, cmd
+			}
 			// If in PR creation flow, show error and abort
 			if m.commitBeforePR {
 				m.commitBeforePR = false
@@ -566,6 +572,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.commitModalStatusTime = time.Now()
 			return m, nil
 		} else {
+			// If auto-committing with AI, commit immediately without PR flow
+			if m.autoCommitWithAI {
+				m.autoCommitWithAI = false
+				if wt := m.selectedWorktree(); wt != nil {
+					return m, m.createCommit(wt.Path, msg.subject, msg.body)
+				}
+				return m, nil
+			}
 			// If in PR creation flow, auto-commit with generated message
 			if m.commitBeforePR {
 				cmd := m.showInfoNotification("Committing with AI-generated message...")
@@ -945,8 +959,8 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "C":
-		// Open commit modal (Shift+C for commit)
+	case "c":
+		// Commit changes
 		if wt := m.selectedWorktree(); wt != nil {
 			// Check if worktree has uncommitted changes
 			hasUncommitted, err := m.gitManager.HasUncommittedChanges(wt.Path)
@@ -957,13 +971,32 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cmd = m.showInfoNotification("Nothing to commit - no uncommitted changes in " + wt.Branch)
 				return m, cmd
 			}
-			m.modal = commitModal
-			m.modalFocused = 0
-			m.commitSubjectInput.SetValue("")
-			m.commitSubjectInput.Focus()
-			m.commitBodyInput.SetValue("")
-			m.commitModalStatus = "" // Clear any previous status
-			return m, nil
+
+			// Check if AI commit generation is enabled and API key is set
+			aiEnabled := m.configManager.GetAICommitEnabled()
+			apiKey := m.configManager.GetOpenRouterAPIKey()
+
+			if aiEnabled && apiKey != "" {
+				// Auto-generate and auto-commit with AI (no modal shown)
+				m.generatingCommit = true
+				m.spinnerFrame = 0
+				m.autoCommitWithAI = true    // Flag for standalone auto-commit
+				notifyCmd := m.showInfoNotification("⏳ Generating commit message with AI...")
+				return m, tea.Batch(
+					notifyCmd,
+					m.animateSpinner(),
+					m.generateCommitMessageWithAI(wt.Path),
+				)
+			} else {
+				// Manual commit mode - open modal for user to type message
+				m.modal = commitModal
+				m.modalFocused = 0
+				m.commitSubjectInput.SetValue("")
+				m.commitSubjectInput.Focus()
+				m.commitBodyInput.SetValue("")
+				m.commitModalStatus = "" // Clear any previous status
+				return m, nil
+			}
 		}
 
 	case "v":

@@ -176,6 +176,9 @@ type Model struct {
 	commitBeforePR      bool   // Flag to track if we're committing before PR creation
 	prCreationPending   string // Worktree path for PR creation after commit
 
+	// Auto-commit with AI state
+	autoCommitWithAI    bool   // Flag to track if we're auto-committing with AI (without opening modal)
+
 	// PR content modal AI generation state
 	generatingPRContent bool // Whether we're currently generating PR content
 	prSpinnerFrame      int  // Current spinner animation frame for PR modal (0-9)

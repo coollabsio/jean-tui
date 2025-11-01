@@ -57,6 +57,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.worktrees = msg.worktrees
 
+			// Mark initialization as complete after first successful worktree load
+			m.isInitializing = false
+
 			// Load PRs from config for each worktree
 			for i := range m.worktrees {
 				if m.configManager != nil {
@@ -96,6 +99,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	// Sort worktrees after loading
+	m.sortWorktrees()
 		return m, nil
 
 	case branchesLoadedMsg:
@@ -211,9 +216,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			cmd = m.showSuccessNotification("Branch renamed successfully", 3*time.Second)
 			// Rename tmux sessions to match the new branch name
+			// Reload worktree list to update the UI
 			return m, tea.Batch(
 				cmd,
 				m.renameSessionsForBranch(msg.oldBranch, msg.newBranch),
+				m.loadWorktreesLightweight(),
 			)
 		}
 
@@ -229,10 +236,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case baseBranchLoadedMsg:
 		m.baseBranch = msg.branch
 		// Load worktrees immediately (without status), then fetch in background
-		return m, tea.Batch(
-			m.loadWorktreesLightweight(), // Shows list immediately
-			m.refreshWithPull(),           // Fetches + triggers reload with status
-		)
+		// Don't call refreshWithPull() initially - just load the list without notifications
+		// The fetch will happen silently on the first worktree load
+		return m, m.loadWorktreesLightweight()
 
 	case notificationHideMsg:
 		// Only handle if this is the current notification
@@ -261,6 +267,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		} else {
 			cmd = m.showSuccessNotification("Opened in editor", 3*time.Second)
+			return m, cmd
+		}
+
+	case gitRepoOpenedMsg:
+		if msg.err != nil {
+			cmd = m.showErrorNotification("Failed to open repository: " + msg.err.Error(), 4*time.Second)
+			return m, cmd
+		} else {
+			cmd = m.showSuccessNotification("Opened in browser", 3*time.Second)
 			return m, cmd
 		}
 
@@ -751,7 +766,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		} else {
 			// Build detailed status message based on what was pulled
-			cmd = m.showSuccessNotification(buildRefreshStatusMessage(msg), 3*time.Second)
+			statusMsg := buildRefreshStatusMessage(msg)
+
+			// If there was an error pulling the main repo branch, append it to the message
+			if msg.pullErr != nil {
+				statusMsg += " (pull error: " + msg.pullErr.Error() + ")"
+				cmd = m.showWarningNotification(statusMsg)
+			} else {
+				cmd = m.showSuccessNotification(statusMsg, 3*time.Second)
+			}
+
+			// Only show notification if not initializing (suppress during startup)
+			if !m.isInitializing {
+				cmd = m.showSuccessNotification(buildRefreshStatusMessage(msg), 3*time.Second)
+			}
 			// Reload worktree list to show updated status
 			return m, tea.Batch(
 				cmd,
@@ -1151,30 +1179,10 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "g":
-		// AI-generate branch name suggestion and open rename modal
+		// Open git repository in browser
 		if wt := m.selectedWorktree(); wt != nil {
-			// Check if this is a workspace worktree
-			if !strings.Contains(wt.Path, ".workspaces") {
-				return m, m.showWarningNotification("Can only rename workspace branches. Use Shift+B for manual rename.")
-			}
-
-			// Check if API key is configured
-			if m.configManager == nil || m.configManager.GetOpenRouterAPIKey() == "" {
-				return m, m.showWarningNotification("OpenRouter API key not configured. Press 's' to configure AI settings.")
-			}
-
-			// Open rename modal with AI generation
-			m.modal = renameModal
-			m.modalFocused = 0
-			m.nameInput.SetValue(wt.Branch)
-			m.nameInput.Focus()
-			m.nameInput.CursorEnd()
-			m.generatingRename = true
-			m.renameSpinnerFrame = 0
-			m.renameModalStatus = ""
 			return m, tea.Batch(
-				m.animateRenameSpinner(),
-				m.generateRenameWithAI(wt.Path, m.baseBranch),
+				m.openGitRepo(),
 			)
 		}
 

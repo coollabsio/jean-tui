@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -225,9 +226,12 @@ type Model struct {
 	ensuringWorktree    bool        // Whether we're currently ensuring a worktree exists
 
 	// Claude status detection
-	claudeStatuses      map[string]session.ClaudeStatus // Status per session name
-	claudeStatusFrame   int                             // Current animation frame for spinner
-	statusDetectors     map[string]*session.StatusDetector // Status detectors per session
+	claudeStatuses    map[string]session.ClaudeStatus   // Status per session name
+	claudeStatusFrame int                               // Current animation frame for spinner
+	statusDetectors   map[string]*session.StatusDetector // Status detectors per session
+
+	// Initialization state
+	isInitializing bool // Suppress notifications during app startup (before first successful worktree load)
 }
 
 // NewModel creates a new TUI model
@@ -334,8 +338,9 @@ func NewModel(repoPath string, autoClaude bool) Model {
 		repoPath:           absoluteRepoPath,
 		editors:            editors,
 		availableThemes:    GetAvailableThemes(),
-		claudeStatuses:     make(map[string]session.ClaudeStatus),
-		statusDetectors:    make(map[string]*session.StatusDetector),
+		claudeStatuses:   make(map[string]session.ClaudeStatus),
+		statusDetectors:  make(map[string]*session.StatusDetector),
+		isInitializing:   true,
 	}
 
 	// Load AI settings from config
@@ -467,6 +472,7 @@ type (
 		updatedBranches   map[string]int  // Branch name -> commits pulled
 		upToDate          bool            // Whether everything was already up to date
 		mergedBaseBranch  bool            // Whether base branch was merged into selected worktree
+		pullErr           error           // Error from pulling the main repo branch (non-blocking)
 	}
 
 	activityTickMsg time.Time
@@ -1342,8 +1348,8 @@ func (m Model) pullFromBaseBranch(worktreePath, baseBranch string) tea.Cmd {
 }
 
 // refreshWithPull fetches latest commits and refreshes worktree status
-// Read-only operation: fetches from remote but does NOT merge or pull anything
-// User must explicitly use 'u' keybinding to pull/merge changes
+// For the main repository: fetches AND pulls to update the working directory
+// For workspace worktrees: fetches only (user must explicitly pull via 'u' keybinding)
 func (m Model) refreshWithPull() tea.Cmd {
 	return func() tea.Msg {
 		msg := refreshWithPullMsg{
@@ -1354,6 +1360,21 @@ func (m Model) refreshWithPull() tea.Cmd {
 		// Fetch all updates from remote first to get latest refs
 		if err := m.gitManager.FetchRemote(); err != nil {
 			return refreshWithPullMsg{err: fmt.Errorf("failed to fetch updates: %w", err)}
+		}
+
+		// If the selected worktree is the main repo (IsCurrent), pull to update working directory
+		selected := m.selectedWorktree()
+		if selected != nil && selected.IsCurrent {
+			// Get the current branch of the main repo
+			branch := selected.Branch
+			if branch != "" {
+				// Pull from the remote tracking branch to get latest commits
+				if err := m.gitManager.PullCurrentBranch(m.repoPath, branch); err != nil {
+					// Pull failed, but fetch succeeded - don't fail the refresh
+					// User can see the behind count and manually pull if needed
+					msg.pullErr = err
+				}
+			}
 		}
 
 		// Worktree list will be reloaded by the Update handler
@@ -1580,4 +1601,53 @@ func (m Model) pollClaudeStatuses() tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// gitRepoOpenedMsg is sent when the git repository is opened in browser
+type gitRepoOpenedMsg struct {
+	err error
+}
+
+// openGitRepo opens the git repository in the default browser
+func (m Model) openGitRepo() tea.Cmd {
+	return func() tea.Msg {
+		selected := m.selectedWorktree()
+		if selected == nil {
+			return gitRepoOpenedMsg{err: fmt.Errorf("no worktree selected")}
+		}
+
+		// Get the branch URL for the selected worktree
+		url, err := m.gitManager.GetBranchRemoteURL(selected.Branch)
+		if err != nil {
+			return gitRepoOpenedMsg{err: err}
+		}
+
+		// Open in browser
+		if err := git.OpenInBrowser(url); err != nil {
+			return gitRepoOpenedMsg{err: err}
+		}
+
+		return gitRepoOpenedMsg{err: nil}
+	}
+}
+
+// sortWorktrees sorts the worktree list by last modified time (most recent first)
+func (m *Model) sortWorktrees() {
+	if len(m.worktrees) == 0 {
+		return
+	}
+
+	// Sort: root worktree (IsCurrent=true) always first, then by LastModified (most recent first)
+	sort.SliceStable(m.worktrees, func(i, j int) bool {
+		// Root worktree always comes first
+		if m.worktrees[i].IsCurrent {
+			return true
+		}
+		if m.worktrees[j].IsCurrent {
+			return false
+		}
+
+		// Otherwise, sort by last modified time (most recent first)
+		return m.worktrees[i].LastModified.After(m.worktrees[j].LastModified)
+	})
 }

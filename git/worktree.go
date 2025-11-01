@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type Worktree struct {
 	IsOutdated      bool             // Convenience flag: true if behind > 0
 	HasUncommitted  bool             // Whether the worktree has uncommitted changes
 	PRs             interface{}      // []config.PRInfo - Pull requests for this branch (loaded from config)
+	LastModified    time.Time        // Last modification time of the worktree directory
 }
 
 // Manager handles Git worktree operations
@@ -68,6 +70,10 @@ func (m *Manager) parseWorktrees(output string, baseBranch string) ([]Worktree, 
 	for _, line := range lines {
 		if line == "" {
 			if current.Path != "" {
+				// Populate LastModified time before adding to list
+				if modTime, err := m.getWorktreeModTime(current.Path); err == nil {
+					current.LastModified = modTime
+				}
 				worktrees = append(worktrees, current)
 				current = Worktree{}
 			}
@@ -97,6 +103,10 @@ func (m *Manager) parseWorktrees(output string, baseBranch string) ([]Worktree, 
 
 	// Add the last worktree if exists
 	if current.Path != "" {
+		// Populate LastModified time before adding to list
+		if modTime, err := m.getWorktreeModTime(current.Path); err == nil {
+			current.LastModified = modTime
+		}
 		worktrees = append(worktrees, current)
 	}
 
@@ -140,6 +150,15 @@ func (m *Manager) parseWorktrees(output string, baseBranch string) ([]Worktree, 
 	}
 
 	return worktrees, nil
+}
+
+// getWorktreeModTime returns the modification time of a worktree directory
+func (m *Manager) getWorktreeModTime(path string) (time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
 }
 
 // GetCurrentBranch returns the name of the current branch
@@ -1121,4 +1140,73 @@ func (m *Manager) GetDiffFromBase(worktreePath, baseBranch string) (string, erro
 		return "", fmt.Errorf("failed to get diff from base: %w", err)
 	}
 	return string(output), nil
+}
+
+// GetBranchRemoteURL constructs a GitHub URL for a given branch
+// Returns the branch URL if the branch exists on remote, otherwise returns the repo URL
+func (m *Manager) GetBranchRemoteURL(branchName string) (string, error) {
+	isGitHub, err := m.IsGitHubRepo()
+	if err != nil {
+		return "", err
+	}
+
+	if !isGitHub {
+		return "", fmt.Errorf("repository is not hosted on GitHub")
+	}
+
+	url, err := m.GetRemoteURL()
+	if err != nil {
+		return "", err
+	}
+
+	// Convert SSH URL to HTTPS if needed
+	url = convertSSHToHTTPS(url)
+
+	// Check if branch exists on remote
+	checkCmd := exec.Command("git", "-C", m.repoPath, "ls-remote", "--heads", "origin", branchName)
+	output, err := checkCmd.Output()
+	if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+		// Branch exists on remote, return branch URL
+		return fmt.Sprintf("%s/tree/%s", url, branchName), nil
+	}
+
+	// Branch doesn't exist on remote, return repo URL
+	return url, nil
+}
+
+// convertSSHToHTTPS converts SSH git URL to HTTPS format
+// Example: git@github.com:user/repo.git -> https://github.com/user/repo
+func convertSSHToHTTPS(url string) string {
+	if strings.HasPrefix(url, "git@") {
+		// Convert git@github.com:user/repo.git to https://github.com/user/repo
+		url = strings.Replace(url, ":", "/", 1)           // git@github.com/user/repo.git
+		url = strings.Replace(url, "git@", "https://", 1) // https://github.com/user/repo.git
+	}
+
+	// Remove .git suffix if present
+	url = strings.TrimSuffix(url, ".git")
+	return url
+}
+
+// OpenInBrowser opens a URL in the default web browser
+// Works cross-platform: macOS, Linux, and Windows
+func OpenInBrowser(url string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS
+		cmd = exec.Command("open", url)
+	case "linux":
+		// Linux
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		// Windows
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+
+	// Start the command without waiting for it to complete
+	return cmd.Start()
 }

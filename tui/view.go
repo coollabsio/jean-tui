@@ -933,7 +933,7 @@ func (m Model) renderRenameModal() string {
 		// Show spinner animation while generating
 		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinner := spinnerFrames[m.renameSpinnerFrame%10]
-		b.WriteString(statusStyle.Render(spinner + " Generating branch name from changes..."))
+		b.WriteString(statusStyle.Render(spinner + " 🤖 Generating branch name from changes..."))
 		b.WriteString("\n\n")
 	} else if m.renameModalStatus != "" {
 		if strings.Contains(m.renameModalStatus, "❌") {
@@ -1119,7 +1119,7 @@ func (m Model) renderCommitModal() string {
 		// Show spinner animation while generating
 		spinnerFrames := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 		spinner := spinnerFrames[m.spinnerFrame%10]
-		b.WriteString(statusStyle.Render(spinner + " Generating commit message with AI..."))
+		b.WriteString(statusStyle.Render(spinner + " 🤖 Generating commit message with AI..."))
 		b.WriteString("\n\n")
 	} else if m.commitModalStatus != "" {
 		if strings.Contains(m.commitModalStatus, "❌") {

@@ -455,7 +455,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if hasAPIKey && aiEnabled {
 			// Generate AI PR content before creating PR
-			cmd = m.showInfoNotification("📝 Generating PR title and description...")
+			cmd = m.showInfoNotification("🤖 Generating PR title and description...")
 			return m, tea.Batch(
 				cmd,
 				m.renameSessionsForBranch(msg.oldBranchName, msg.newBranchName),
@@ -593,7 +593,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, m.generateBranchNameForPR(msg.worktreePath, msg.branch, m.baseBranch))
 		} else if shouldAIContent {
 			// Generate AI PR content (title and description) even without branch rename
-			cmd = m.showInfoNotification("📝 Generating PR title and description...")
+			cmd = m.showInfoNotification("🤖 Generating PR title and description...")
 			return m, tea.Batch(cmd, m.generatePRContent(msg.worktreePath, msg.branch, m.baseBranch))
 		} else {
 			// No AI available - open PR content modal for manual entry
@@ -900,13 +900,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// If auto-committing with AI, show error and abort
 			if m.autoCommitWithAI {
 				m.autoCommitWithAI = false
-				cmd := m.showErrorNotification("Failed to generate commit message: " + msg.err.Error(), 4*time.Second)
+				cmd := m.showErrorNotification("🤖 Failed to generate commit message: " + msg.err.Error(), 4*time.Second)
 				return m, cmd
 			}
 			// If in PR creation flow, show error and abort
 			if m.commitBeforePR {
 				m.commitBeforePR = false
-				cmd := m.showErrorNotification("Failed to generate commit message: " + msg.err.Error(), 4*time.Second)
+				cmd := m.showErrorNotification("🤖 Failed to generate commit message: " + msg.err.Error(), 4*time.Second)
 				return m, cmd
 			}
 			// Set status message in commit modal
@@ -924,7 +924,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// If in PR creation flow, auto-commit with generated message
 			if m.commitBeforePR {
-				cmd := m.showInfoNotification("Committing with AI-generated message...")
+				cmd := m.showInfoNotification("🤖 Committing with AI-generated message...")
 				return m, tea.Batch(cmd, m.createCommit(m.prCreationPending, msg.subject, msg.body))
 			}
 			// Otherwise populate the commit message fields with AI-generated content for user review

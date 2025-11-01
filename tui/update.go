@@ -751,7 +751,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		} else {
 			// Build detailed status message based on what was pulled
-			cmd = m.showSuccessNotification(buildRefreshStatusMessage(msg), 3*time.Second)
+			statusMsg := buildRefreshStatusMessage(msg)
+
+			// If there was an error pulling the main repo branch, append it to the message
+			if msg.pullErr != nil {
+				statusMsg += " (pull error: " + msg.pullErr.Error() + ")"
+				cmd = m.showWarningNotification(statusMsg)
+			} else {
+				cmd = m.showSuccessNotification(statusMsg, 3*time.Second)
+			}
+
 			// Reload worktree list to show updated status
 			return m, tea.Batch(
 				cmd,

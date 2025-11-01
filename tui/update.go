@@ -1499,6 +1499,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Create worktree from existing PR on GitHub (Shift+N)
 		m.modal = prListModal
 		m.prListIndex = 0
+		m.prListCreationMode = true // Set creation mode flag
 		m.prSearchInput.SetValue("")
 		m.prSearchInput.Focus()
 		m.filteredPRs = nil
@@ -2379,24 +2380,13 @@ func (m Model) handlePRContentModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handlePRListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	wt := m.selectedWorktree()
-	if wt == nil {
-		m.modal = noModal
-		m.prListMergeMode = false
-		return m, nil
-	}
-
-	prs, ok := wt.PRs.([]config.PRInfo)
-	if !ok || len(prs) == 0 {
-		m.modal = noModal
-		m.prListMergeMode = false
-		return m, nil
-	}
-
 	switch msg.String() {
 	case "esc":
 		m.modal = noModal
 		m.prListMergeMode = false
+		m.prListCreationMode = false
+		m.prListIndex = 0
+		m.prSearchInput.Blur()
 		return m, nil
 
 	case "up":
@@ -2406,25 +2396,86 @@ func (m Model) handlePRListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "down":
-		if m.prListIndex < len(prs)-1 {
+		// Get the filtered PR list based on current search
+		filteredList := m.filterPRs(m.prSearchInput.Value())
+		if m.prListIndex < len(filteredList)-1 {
 			m.prListIndex++
 		}
 		return m, nil
 
+	case "tab":
+		// Cycle focus: search -> list -> OK button -> Cancel button -> search
+		m.modalFocused = (m.modalFocused + 1) % 4
+		if m.modalFocused == 0 {
+			m.prSearchInput.Focus()
+		} else {
+			m.prSearchInput.Blur()
+		}
+		return m, nil
+
 	case "enter":
-		if m.prListIndex >= 0 && m.prListIndex < len(prs) {
-			selectedPR := prs[m.prListIndex]
+		// Get filtered PRs for selection
+		filteredList := m.filterPRs(m.prSearchInput.Value())
+		if m.prListIndex >= len(filteredList) {
+			return m, nil
+		}
+
+		if len(filteredList) == 0 {
+			return m, nil
+		}
+
+		selectedPR := filteredList[m.prListIndex]
+
+		// Handle creation mode: create worktree from PR branch
+		if m.prListCreationMode {
+			m.modal = noModal
+			m.prListCreationMode = false
+			m.prListIndex = 0
+			m.prSearchInput.SetValue("")
+			m.prSearchInput.Blur()
+			cmd := m.showInfoNotification("Creating worktree from PR...")
+			return m, tea.Batch(cmd, m.createWorktreeFromPR(selectedPR.HeadRefName))
+		} else {
+			// Handle merge or default mode (for worktree PRs)
+			wt := m.selectedWorktree()
+			if wt == nil {
+				m.modal = noModal
+				m.prListMergeMode = false
+				return m, nil
+			}
+
+			// Get PRs from worktree
+			prList, ok := wt.PRs.([]config.PRInfo)
+			if !ok || len(prList) == 0 {
+				m.modal = noModal
+				m.prListMergeMode = false
+				return m, nil
+			}
+
+			// Find matching PR by branch name
+			var selectedConfigPR config.PRInfo
+			for _, pr := range prList {
+				if pr.Branch == selectedPR.HeadRefName {
+					selectedConfigPR = pr
+					break
+				}
+			}
+
+			if selectedConfigPR.URL == "" {
+				m.modal = noModal
+				return m, m.showErrorNotification("PR not found in worktree", 3*time.Second)
+			}
 
 			if m.prListMergeMode {
 				// User is merging a PR - proceed to merge strategy selection
-				m.selectedPRForMerge = selectedPR.URL
+				m.selectedPRForMerge = selectedConfigPR.URL
 				m.mergeStrategyCursor = 0 // Default to squash
 				m.modal = mergeStrategyModal
 				m.prListMergeMode = false
 				return m, nil
 			} else {
 				// User is opening PR in browser (default mode)
-				cmd := exec.Command("gh", "pr", "view", selectedPR.URL, "--web")
+				cmd := exec.Command("gh", "pr", "view", selectedConfigPR.URL, "--web")
 				err := cmd.Start()
 				if err != nil {
 					m.modal = noModal
@@ -2434,9 +2485,23 @@ func (m Model) handlePRListModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.showSuccessNotification("Opening PR in browser...", 2*time.Second)
 			}
 		}
-	}
 
-	return m, nil
+	default:
+		// Pass all other input to the search input when it's focused
+		if m.modalFocused == 0 {
+			oldValue := m.prSearchInput.Value()
+			m.prSearchInput, _ = m.prSearchInput.Update(msg)
+			newValue := m.prSearchInput.Value()
+
+			// If search value changed, reset list index
+			if oldValue != newValue {
+				m.prListIndex = 0
+			}
+
+			return m, nil
+		}
+		return m, nil
+	}
 }
 
 func (m Model) handleMergeStrategyModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

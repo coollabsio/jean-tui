@@ -206,6 +206,7 @@ type Model struct {
 	// PR list modal state
 	prListIndex int // Selected PR index in the PR list modal
 	prListMergeMode bool // Whether PR list modal is in merge mode (user pressed SHIFT+M)
+	prListCreationMode bool // Whether PR list modal is in worktree creation mode (user pressed N)
 
 	// Merge strategy modal state
 	mergeStrategyCursor int // Selected merge strategy (0=squash, 1=merge, 2=rebase)
@@ -729,6 +730,19 @@ func (m Model) deleteWorktree(path, branch string, force bool) tea.Cmd {
 		_ = m.sessionManager.Kill(sessionName) // Ignore error if session doesn't exist
 
 		return worktreeDeletedMsg{err: nil}
+	}
+}
+
+func (m Model) createWorktreeFromPR(branch string) tea.Cmd {
+	return func() tea.Msg {
+		// Ensure .workspaces directory exists
+		if err := m.gitManager.EnsureWorkspacesDir(); err != nil {
+			return worktreeCreatedMsg{err: err, path: "", branch: branch}
+		}
+
+		// Create worktree from the PR's branch (existing branch, not new)
+		err := m.gitManager.Create("", branch, false, "")
+		return worktreeCreatedMsg{err: err, path: "", branch: branch}
 	}
 }
 

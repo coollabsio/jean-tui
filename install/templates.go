@@ -112,8 +112,8 @@ gcool() {
                         tmux new-window -t "$session_name:1" -c "$worktree_path" -n "terminal"
                     fi
                 fi
-                # Attach to target window by name to ensure we attach to the correct window
-                tmux attach-session -t "$session_name:${target_window}"
+                # Attach to target window
+                tmux attach-session -t "$session_name:${window_index}"
                 continue
             else
                 # Create new session with both windows
@@ -137,8 +137,8 @@ gcool() {
                     fi
                 fi
 
-                # Attach to target window by name to ensure we attach to the correct window
-                tmux attach-session -t "$session_name:${target_window}"
+                # Attach to target window
+                tmux attach-session -t "$session_name:${window_index}"
                 continue
             fi
         else
@@ -261,8 +261,8 @@ function gcool
                             tmux new-window -t "$session_name:1" -c "$worktree_path" -n "terminal"
                         end
                     end
-                    # Attach to target window by name to ensure we attach to the correct window
-                    tmux attach-session -t "$session_name:${target_window}"
+                    # Attach to target window
+                    tmux attach-session -t "$session_name:${window_index}"
                     continue
                 else
                     # Create new session with both windows
@@ -283,8 +283,8 @@ function gcool
                         end
                     end
 
-                    # Attach to target window by name to ensure we attach to the correct window
-                    tmux attach-session -t "$session_name:${target_window}"
+                    # Attach to target window
+                    tmux attach-session -t "$session_name:${window_index}"
                     continue
                 end
             end

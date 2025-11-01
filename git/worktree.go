@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -1121,4 +1122,73 @@ func (m *Manager) GetDiffFromBase(worktreePath, baseBranch string) (string, erro
 		return "", fmt.Errorf("failed to get diff from base: %w", err)
 	}
 	return string(output), nil
+}
+
+// GetBranchRemoteURL constructs a GitHub URL for a given branch
+// Returns the branch URL if the branch exists on remote, otherwise returns the repo URL
+func (m *Manager) GetBranchRemoteURL(branchName string) (string, error) {
+	isGitHub, err := m.IsGitHubRepo()
+	if err != nil {
+		return "", err
+	}
+
+	if !isGitHub {
+		return "", fmt.Errorf("repository is not hosted on GitHub")
+	}
+
+	url, err := m.GetRemoteURL()
+	if err != nil {
+		return "", err
+	}
+
+	// Convert SSH URL to HTTPS if needed
+	url = convertSSHToHTTPS(url)
+
+	// Check if branch exists on remote
+	checkCmd := exec.Command("git", "-C", m.repoPath, "ls-remote", "--heads", "origin", branchName)
+	output, err := checkCmd.Output()
+	if err == nil && len(strings.TrimSpace(string(output))) > 0 {
+		// Branch exists on remote, return branch URL
+		return fmt.Sprintf("%s/tree/%s", url, branchName), nil
+	}
+
+	// Branch doesn't exist on remote, return repo URL
+	return url, nil
+}
+
+// convertSSHToHTTPS converts SSH git URL to HTTPS format
+// Example: git@github.com:user/repo.git -> https://github.com/user/repo
+func convertSSHToHTTPS(url string) string {
+	if strings.HasPrefix(url, "git@") {
+		// Convert git@github.com:user/repo.git to https://github.com/user/repo
+		url = strings.Replace(url, ":", "/", 1)           // git@github.com/user/repo.git
+		url = strings.Replace(url, "git@", "https://", 1) // https://github.com/user/repo.git
+	}
+
+	// Remove .git suffix if present
+	url = strings.TrimSuffix(url, ".git")
+	return url
+}
+
+// OpenInBrowser opens a URL in the default web browser
+// Works cross-platform: macOS, Linux, and Windows
+func OpenInBrowser(url string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "darwin":
+		// macOS
+		cmd = exec.Command("open", url)
+	case "linux":
+		// Linux
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		// Windows
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+
+	// Start the command without waiting for it to complete
+	return cmd.Start()
 }

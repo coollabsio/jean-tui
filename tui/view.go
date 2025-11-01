@@ -359,6 +359,7 @@ func (m Model) renderMinimalHelpBar() string {
 		"n new",
 		"enter/t cli/terminal",
 		"c commit",
+		"g github",
 		"p push",
 		"h help",
 		"q quit",

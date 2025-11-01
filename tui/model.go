@@ -1551,3 +1551,31 @@ func (m Model) scheduleNotificationHide(id int64, duration time.Duration) tea.Cm
 		}),
 	)
 }
+
+// gitRepoOpenedMsg is sent when the git repository is opened in browser
+type gitRepoOpenedMsg struct {
+	err error
+}
+
+// openGitRepo opens the git repository in the default browser
+func (m Model) openGitRepo() tea.Cmd {
+	return func() tea.Msg {
+		selected := m.selectedWorktree()
+		if selected == nil {
+			return gitRepoOpenedMsg{err: fmt.Errorf("no worktree selected")}
+		}
+
+		// Get the branch URL for the selected worktree
+		url, err := m.gitManager.GetBranchRemoteURL(selected.Branch)
+		if err != nil {
+			return gitRepoOpenedMsg{err: err}
+		}
+
+		// Open in browser
+		if err := git.OpenInBrowser(url); err != nil {
+			return gitRepoOpenedMsg{err: err}
+		}
+
+		return gitRepoOpenedMsg{err: nil}
+	}
+}

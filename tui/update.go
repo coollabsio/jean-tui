@@ -268,6 +268,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+	case gitRepoOpenedMsg:
+		if msg.err != nil {
+			cmd = m.showErrorNotification("Failed to open repository: " + msg.err.Error(), 4*time.Second)
+			return m, cmd
+		} else {
+			cmd = m.showSuccessNotification("Opened in browser", 3*time.Second)
+			return m, cmd
+		}
+
 	case prCreatedMsg:
 		if msg.err != nil {
 			m.debugLog(fmt.Sprintf("PR creation failed: %v", msg.err))
@@ -1159,30 +1168,10 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "g":
-		// AI-generate branch name suggestion and open rename modal
+		// Open git repository in browser
 		if wt := m.selectedWorktree(); wt != nil {
-			// Check if this is a workspace worktree
-			if !strings.Contains(wt.Path, ".workspaces") {
-				return m, m.showWarningNotification("Can only rename workspace branches. Use Shift+B for manual rename.")
-			}
-
-			// Check if API key is configured
-			if m.configManager == nil || m.configManager.GetOpenRouterAPIKey() == "" {
-				return m, m.showWarningNotification("OpenRouter API key not configured. Press 's' to configure AI settings.")
-			}
-
-			// Open rename modal with AI generation
-			m.modal = renameModal
-			m.modalFocused = 0
-			m.nameInput.SetValue(wt.Branch)
-			m.nameInput.Focus()
-			m.nameInput.CursorEnd()
-			m.generatingRename = true
-			m.renameSpinnerFrame = 0
-			m.renameModalStatus = ""
 			return m, tea.Batch(
-				m.animateRenameSpinner(),
-				m.generateRenameWithAI(wt.Path, m.baseBranch),
+				m.openGitRepo(),
 			)
 		}
 

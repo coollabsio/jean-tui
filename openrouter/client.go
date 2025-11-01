@@ -57,7 +57,8 @@ func NewClient(apiKey, model string) *Client {
 }
 
 // GenerateCommitMessage generates a conventional commit message based on git diff
-func (c *Client) GenerateCommitMessage(diff string) (subject, body string, err error) {
+// If customPrompt is empty, uses the default prompt
+func (c *Client) GenerateCommitMessage(diff, customPrompt string) (subject, body string, err error) {
 	if c.apiKey == "" {
 		return "", "", fmt.Errorf("OpenRouter API key not configured")
 	}
@@ -67,17 +68,13 @@ func (c *Client) GenerateCommitMessage(diff string) (subject, body string, err e
 		diff = diff[:5000]
 	}
 
-	prompt := fmt.Sprintf(`Generate a conventional commit message for the following git diff.
-
-Return ONLY valid JSON in this format (no markdown, no extra text):
-{"subject": "...", "body": "..."}
-
-Requirements:
-- subject: Required. Max 72 characters. Follow conventional commits (feat:, fix:, refactor:, etc.)
-- body: Optional. Max 500 characters. Explain why, not what. Use plain text (no code blocks).
-
-Git diff:
-%s`, diff)
+	// Use custom prompt if provided, otherwise use default
+	prompt := customPrompt
+	if prompt == "" {
+		prompt = DefaultCommitPrompt
+	}
+	// Replace {diff} placeholder with actual diff
+	prompt = strings.ReplaceAll(prompt, "{diff}", diff)
 
 	response, err := c.callAPI(prompt)
 	if err != nil {
@@ -109,7 +106,8 @@ Git diff:
 }
 
 // GenerateBranchName generates a semantic branch name based on git diff
-func (c *Client) GenerateBranchName(diff string) (string, error) {
+// If customPrompt is empty, uses the default prompt
+func (c *Client) GenerateBranchName(diff, customPrompt string) (string, error) {
 	if c.apiKey == "" {
 		return "", fmt.Errorf("OpenRouter API key not configured")
 	}
@@ -119,14 +117,13 @@ func (c *Client) GenerateBranchName(diff string) (string, error) {
 		diff = diff[:3000]
 	}
 
-	prompt := fmt.Sprintf(`Generate a short, semantic git branch name for these changes.
-
-Return ONLY the branch name (lowercase, kebab-case, max 40 characters). No explanations or markdown.
-
-Examples: fix-login-bug, feat-dark-theme, refactor-api-client
-
-Git diff:
-%s`, diff)
+	// Use custom prompt if provided, otherwise use default
+	prompt := customPrompt
+	if prompt == "" {
+		prompt = DefaultBranchNamePrompt
+	}
+	// Replace {diff} placeholder with actual diff
+	prompt = strings.ReplaceAll(prompt, "{diff}", diff)
 
 	name, err := c.callAPI(prompt)
 	if err != nil {
@@ -164,7 +161,8 @@ Git diff:
 }
 
 // GeneratePRContent generates a PR title and description from a git diff
-func (c *Client) GeneratePRContent(diff string) (title, description string, err error) {
+// If customPrompt is empty, uses the default prompt
+func (c *Client) GeneratePRContent(diff, customPrompt string) (title, description string, err error) {
 	if c.apiKey == "" {
 		return "", "", fmt.Errorf("OpenRouter API key not configured")
 	}
@@ -174,21 +172,13 @@ func (c *Client) GeneratePRContent(diff string) (title, description string, err 
 		diff = diff[:5000]
 	}
 
-	prompt := fmt.Sprintf(`Generate a pull request title and description for these changes.
-
-You must respond with EXACTLY this format (no markdown, no extra text):
-TITLE: [Your title here - max 72 characters, present tense]
-DESCRIPTION: [Your description here - 2-3 sentences explaining what and why]
-
-Examples:
-TITLE: Add dark mode support to UI components
-DESCRIPTION: Implement dark mode theme switcher that respects system preferences. This improves accessibility and reduces eye strain for users in low-light environments.
-
-TITLE: Fix authentication timeout issue
-DESCRIPTION: Increase session timeout from 30 to 60 minutes and add proper token refresh handling. Users are being logged out too frequently during legitimate work sessions.
-
-Git diff:
-%s`, diff)
+	// Use custom prompt if provided, otherwise use default
+	prompt := customPrompt
+	if prompt == "" {
+		prompt = DefaultPRPrompt
+	}
+	// Replace {diff} placeholder with actual diff
+	prompt = strings.ReplaceAll(prompt, "{diff}", diff)
 
 	response, err := c.callAPI(prompt)
 	if err != nil {

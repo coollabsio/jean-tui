@@ -429,6 +429,8 @@ func (m Model) renderModal() string {
 		return m.renderSettingsModal()
 	case aiSettingsModal:
 		return m.renderAISettingsModal()
+	case aiPromptsModal:
+		return m.renderAIPromptsModal()
 	case tmuxConfigModal:
 		return m.renderTmuxConfigModal()
 	case themeSelectModal:
@@ -1645,6 +1647,7 @@ func (m Model) renderAISettingsModal() string {
 
 	// Buttons
 	testStyle := buttonStyle
+	customizeStyle := buttonStyle
 	saveStyle := buttonStyle
 	cancelStyle := cancelButtonStyle
 	clearStyle := cancelButtonStyle
@@ -1652,20 +1655,111 @@ func (m Model) renderAISettingsModal() string {
 	if m.aiModalFocusedField == 4 {
 		testStyle = selectedButtonStyle
 	} else if m.aiModalFocusedField == 5 {
-		saveStyle = selectedButtonStyle
+		customizeStyle = selectedButtonStyle
 	} else if m.aiModalFocusedField == 6 {
-		cancelStyle = selectedCancelButtonStyle
+		saveStyle = selectedButtonStyle
 	} else if m.aiModalFocusedField == 7 {
+		cancelStyle = selectedCancelButtonStyle
+	} else if m.aiModalFocusedField == 8 {
 		clearStyle = selectedCancelButtonStyle
 	}
 
 	b.WriteString(testStyle.Render("[ Test Key ]"))
+	b.WriteString("  ")
+	b.WriteString(customizeStyle.Render("[ Customize Prompts ]"))
 	b.WriteString("  ")
 	b.WriteString(saveStyle.Render("[ Save ]"))
 	b.WriteString("  ")
 	b.WriteString(cancelStyle.Render("[ Cancel ]"))
 	b.WriteString("  ")
 	b.WriteString(clearStyle.Render("[ Clear ]"))
+
+	b.WriteString("\n\n")
+	b.WriteString(helpStyle.Render("Tab: next field • Enter: confirm • Esc: cancel"))
+
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		modalStyle.Render(b.String()),
+	)
+}
+
+func (m Model) renderAIPromptsModal() string {
+	var b strings.Builder
+
+	b.WriteString(modalTitleStyle.Render("Customize AI Prompts"))
+	b.WriteString("\n\n")
+
+	// Instructions
+	b.WriteString(helpStyle.Render("Edit the AI prompts used for generating commit messages, branch names, and PR content."))
+	b.WriteString("\n")
+	b.WriteString(helpStyle.Render("Note: Use {diff} placeholder to indicate where the git diff should be inserted."))
+	b.WriteString("\n\n")
+
+	// Commit message prompt
+	commitLabel := "Commit Message Prompt:"
+	if m.aiPromptsModalFocus == 0 {
+		commitLabel = selectedItemStyle.Render(commitLabel)
+	} else {
+		commitLabel = inputLabelStyle.Render(commitLabel)
+	}
+	b.WriteString(commitLabel)
+	b.WriteString("\n")
+	b.WriteString(m.aiPromptCommitInput.View())
+	b.WriteString("\n\n")
+
+	// Branch name prompt
+	branchLabel := "Branch Name Prompt:"
+	if m.aiPromptsModalFocus == 1 {
+		branchLabel = selectedItemStyle.Render(branchLabel)
+	} else {
+		branchLabel = inputLabelStyle.Render(branchLabel)
+	}
+	b.WriteString(branchLabel)
+	b.WriteString("\n")
+	b.WriteString(m.aiPromptBranchInput.View())
+	b.WriteString("\n\n")
+
+	// PR content prompt
+	prLabel := "PR Content Prompt:"
+	if m.aiPromptsModalFocus == 2 {
+		prLabel = selectedItemStyle.Render(prLabel)
+	} else {
+		prLabel = inputLabelStyle.Render(prLabel)
+	}
+	b.WriteString(prLabel)
+	b.WriteString("\n")
+	b.WriteString(m.aiPromptPRInput.View())
+	b.WriteString("\n\n")
+
+	// Status message
+	if m.aiPromptsStatus != "" {
+		if strings.Contains(m.aiPromptsStatus, "❌") {
+			b.WriteString(errorStyle.Render(m.aiPromptsStatus))
+		} else {
+			b.WriteString(statusStyle.Render(m.aiPromptsStatus))
+		}
+		b.WriteString("\n\n")
+	}
+
+	// Buttons
+	saveStyle := buttonStyle
+	resetStyle := cancelButtonStyle
+	cancelStyle := cancelButtonStyle
+
+	if m.aiPromptsModalFocus == 3 {
+		saveStyle = selectedButtonStyle
+	} else if m.aiPromptsModalFocus == 4 {
+		resetStyle = selectedCancelButtonStyle
+	} else if m.aiPromptsModalFocus == 5 {
+		cancelStyle = selectedCancelButtonStyle
+	}
+
+	b.WriteString(saveStyle.Render("[ Save ]"))
+	b.WriteString("  ")
+	b.WriteString(resetStyle.Render("[ Reset to Defaults ]"))
+	b.WriteString("  ")
+	b.WriteString(cancelStyle.Render("[ Cancel ]"))
 
 	b.WriteString("\n\n")
 	b.WriteString(helpStyle.Render("Tab: next field • Enter: confirm • Esc: cancel"))

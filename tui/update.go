@@ -955,6 +955,45 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+	case aiPromptsLoadedMsg:
+		// Load prompts into the modal inputs
+		if msg.err != nil {
+			m.aiPromptsStatus = "Error loading prompts: " + msg.err.Error()
+			return m, nil
+		}
+		m.aiPromptCommitInput.SetValue(msg.commitPrompt)
+		m.aiPromptBranchInput.SetValue(msg.branchPrompt)
+		m.aiPromptPRInput.SetValue(msg.prPrompt)
+		m.aiPromptsStatus = ""
+		return m, nil
+
+	case aiPromptsSavedMsg:
+		if msg.err != nil {
+			m.aiPromptsStatus = "❌ Failed to save: " + msg.err.Error()
+			m.aiPromptsStatusTime = time.Now()
+			return m, nil
+		}
+		// Success - close modal and return to AI settings
+		cmd := m.showSuccessNotification("AI prompts saved successfully", 2*time.Second)
+		m.modal = aiSettingsModal
+		m.aiModalFocusedField = 0
+		m.aiPromptCommitInput.Blur()
+		m.aiPromptBranchInput.Blur()
+		m.aiPromptPRInput.Blur()
+		return m, cmd
+
+	case aiPromptsResetMsg:
+		if msg.err != nil {
+			m.aiPromptsStatus = "❌ Failed to reset: " + msg.err.Error()
+			m.aiPromptsStatusTime = time.Now()
+			return m, nil
+		}
+		// Reload the default prompts to display them
+		cmd := m.loadAIPrompts()
+		m.aiPromptsStatus = "✅ Prompts reset to defaults"
+		m.aiPromptsStatusTime = time.Now()
+		return m, cmd
+
 	case spinnerTickMsg:
 		// Update spinner animation frame and schedule next tick if still generating
 		if m.generatingCommit {
@@ -1665,6 +1704,9 @@ func (m Model) handleModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case scriptOutputModal:
 		return m.handleScriptOutputModalInput(msg)
+
+	case aiPromptsModal:
+		return m.handleAIPromptsModalInput(msg)
 
 	case helperModal:
 		return m.handleHelperModalInput(msg)
@@ -2840,8 +2882,8 @@ func (m Model) handleAISettingsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "tab":
-		// Tab cycles through: API key input (0) -> Model (1) -> AI Commit toggle (2) -> AI Branch toggle (3) -> Test (4) -> Save (5) -> Cancel (6) -> Clear (7) -> back to API key
-		m.aiModalFocusedField = (m.aiModalFocusedField + 1) % 8
+		// Tab cycles through: API key input (0) -> Model (1) -> AI Commit toggle (2) -> AI Branch toggle (3) -> Test (4) -> Customize Prompts (5) -> Save (6) -> Cancel (7) -> Clear (8) -> back to API key
+		m.aiModalFocusedField = (m.aiModalFocusedField + 1) % 9
 		if m.aiModalFocusedField == 0 {
 			m.aiAPIKeyInput.Focus()
 		} else {
@@ -2851,7 +2893,7 @@ func (m Model) handleAISettingsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "shift+tab":
 		// Shift+Tab goes backwards
-		m.aiModalFocusedField = (m.aiModalFocusedField - 1 + 8) % 8
+		m.aiModalFocusedField = (m.aiModalFocusedField - 1 + 9) % 9
 		if m.aiModalFocusedField == 0 {
 			m.aiAPIKeyInput.Focus()
 		} else {
@@ -2892,6 +2934,13 @@ func (m Model) handleAISettingsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			cmd := m.showInfoNotification("Testing API key...")
 			return m, tea.Batch(cmd, m.testOpenRouterAPIKey(apiKey, model))
 		} else if m.aiModalFocusedField == 5 {
+			// Customize Prompts button
+			m.modal = aiPromptsModal
+			m.aiPromptsModalFocus = 0
+			m.aiPromptsStatus = ""
+			// Load current prompts
+			return m, m.loadAIPrompts()
+		} else if m.aiModalFocusedField == 6 {
 			// Save button
 			apiKey := m.aiAPIKeyInput.Value()
 			if apiKey == "" {
@@ -2921,13 +2970,13 @@ func (m Model) handleAISettingsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.settingsIndex = 4
 			m.aiAPIKeyInput.Blur()
 			return m, cmd
-		} else if m.aiModalFocusedField == 6 {
+		} else if m.aiModalFocusedField == 7 {
 			// Cancel button
 			m.modal = settingsModal
 			m.settingsIndex = 4
 			m.aiAPIKeyInput.Blur()
 			return m, nil
-		} else if m.aiModalFocusedField == 7 {
+		} else if m.aiModalFocusedField == 8 {
 			// Clear button - remove API key
 			m.aiAPIKeyInput.SetValue("")
 			if m.configManager != nil {
@@ -2951,6 +3000,98 @@ func (m Model) handleAISettingsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, cmd
+}
+
+// handleAIPromptsModalInput handles input for the AI prompts customization modal
+func (m Model) handleAIPromptsModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "esc", "q":
+		// Close without saving
+		m.modal = aiSettingsModal
+		m.aiModalFocusedField = 0
+		return m, nil
+
+	case "tab":
+		// Tab cycles through: commit (0) -> branch (1) -> pr (2) -> save (3) -> reset (4) -> cancel (5) -> back to commit
+		m.aiPromptsModalFocus = (m.aiPromptsModalFocus + 1) % 6
+		m.updateAIPromptsInputFocus()
+		return m, nil
+
+	case "shift+tab":
+		// Shift+Tab goes backwards
+		m.aiPromptsModalFocus = (m.aiPromptsModalFocus - 1 + 6) % 6
+		m.updateAIPromptsInputFocus()
+		return m, nil
+
+	case "enter":
+		if m.aiPromptsModalFocus == 3 {
+			// Save button
+			commitPrompt := m.aiPromptCommitInput.Value()
+			branchPrompt := m.aiPromptBranchInput.Value()
+			prPrompt := m.aiPromptPRInput.Value()
+
+			// Validate that prompts contain {diff} placeholder
+			if !strings.Contains(commitPrompt, "{diff}") {
+				m.aiPromptsStatus = "Commit prompt must contain {diff} placeholder"
+				return m, nil
+			}
+			if !strings.Contains(branchPrompt, "{diff}") {
+				m.aiPromptsStatus = "Branch prompt must contain {diff} placeholder"
+				return m, nil
+			}
+			if !strings.Contains(prPrompt, "{diff}") {
+				m.aiPromptsStatus = "PR prompt must contain {diff} placeholder"
+				return m, nil
+			}
+
+			// Save prompts
+			cmd := m.saveAIPrompts(commitPrompt, branchPrompt, prPrompt)
+			return m, cmd
+		} else if m.aiPromptsModalFocus == 4 {
+			// Reset button - show confirmation or just reset
+			cmd := m.resetAIPromptsToDefaults()
+			return m, cmd
+		} else if m.aiPromptsModalFocus == 5 {
+			// Cancel button
+			m.modal = aiSettingsModal
+			m.aiModalFocusedField = 0
+			m.aiPromptCommitInput.Blur()
+			m.aiPromptBranchInput.Blur()
+			m.aiPromptPRInput.Blur()
+			return m, nil
+		}
+
+	default:
+		// Pass keystrokes to the focused text input
+		if m.aiPromptsModalFocus == 0 {
+			m.aiPromptCommitInput, cmd = m.aiPromptCommitInput.Update(msg)
+		} else if m.aiPromptsModalFocus == 1 {
+			m.aiPromptBranchInput, cmd = m.aiPromptBranchInput.Update(msg)
+		} else if m.aiPromptsModalFocus == 2 {
+			m.aiPromptPRInput, cmd = m.aiPromptPRInput.Update(msg)
+		}
+	}
+
+	return m, cmd
+}
+
+// updateAIPromptsInputFocus updates the focus state for AI prompts modal text inputs
+func (m *Model) updateAIPromptsInputFocus() {
+	// Blur all inputs first
+	m.aiPromptCommitInput.Blur()
+	m.aiPromptBranchInput.Blur()
+	m.aiPromptPRInput.Blur()
+
+	// Focus the selected input
+	if m.aiPromptsModalFocus == 0 {
+		m.aiPromptCommitInput.Focus()
+	} else if m.aiPromptsModalFocus == 1 {
+		m.aiPromptBranchInput.Focus()
+	} else if m.aiPromptsModalFocus == 2 {
+		m.aiPromptPRInput.Focus()
+	}
 }
 
 func (m Model) handleTmuxConfigModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/coollabsio/gcool/config"
@@ -77,6 +78,7 @@ const (
 	scriptOutputModal
 	createWithNameModal
 	mergeStrategyModal
+	aiPromptsModal
 )
 
 // NotificationType defines the type of notification
@@ -170,6 +172,15 @@ type Model struct {
 	aiModalFocusedField    int                    // Which field in AI settings modal is focused (0-4: api key, model, commit toggle, branch toggle, buttons)
 	aiModalStatus          string                 // Status message for AI settings modal (error/success)
 	aiModalStatusTime      time.Time              // When the status was set
+
+	// AI Prompts modal state
+	aiPromptsIndex         int                    // Selected prompt field (0=commit, 1=branch, 2=pr)
+	aiPromptCommitInput    textarea.Model         // Textarea for commit message prompt
+	aiPromptBranchInput    textarea.Model         // Textarea for branch name prompt
+	aiPromptPRInput        textarea.Model         // Textarea for PR content prompt
+	aiPromptsModalFocus    int                    // Which element is focused (0=commit, 1=branch, 2=pr, 3=save, 4=reset, 5=cancel)
+	aiPromptsStatus        string                 // Status message for AI prompts modal
+	aiPromptsStatusTime    time.Time              // When the status was set
 
 	// Commit modal status
 	commitModalStatus      string                 // Status message for commit modal (error/success from AI)
@@ -299,6 +310,25 @@ func NewModel(repoPath string, autoClaude bool) Model {
 	prSearchInput.CharLimit = 100
 	prSearchInput.Width = 50
 
+	// Initialize AI prompt textareas (for customizing prompts)
+	aiPromptCommitInput := textarea.New()
+	aiPromptCommitInput.Placeholder = "Commit message prompt (must contain {diff})"
+	aiPromptCommitInput.CharLimit = 2000
+	aiPromptCommitInput.SetWidth(100)
+	aiPromptCommitInput.SetHeight(5)
+
+	aiPromptBranchInput := textarea.New()
+	aiPromptBranchInput.Placeholder = "Branch name prompt (must contain {diff})"
+	aiPromptBranchInput.CharLimit = 2000
+	aiPromptBranchInput.SetWidth(100)
+	aiPromptBranchInput.SetHeight(5)
+
+	aiPromptPRInput := textarea.New()
+	aiPromptPRInput.Placeholder = "PR content prompt (must contain {diff})"
+	aiPromptPRInput.CharLimit = 2000
+	aiPromptPRInput.SetWidth(100)
+	aiPromptPRInput.SetHeight(5)
+
 	// Initialize config manager (ignore errors, will use defaults)
 	configManager, _ := config.NewManager()
 
@@ -351,6 +381,9 @@ func NewModel(repoPath string, autoClaude bool) Model {
 		prDescriptionInput: prDescriptionInput,
 		aiAPIKeyInput:      aiAPIKeyInput,
 		prSearchInput:      prSearchInput,
+		aiPromptCommitInput: aiPromptCommitInput,
+		aiPromptBranchInput: aiPromptBranchInput,
+		aiPromptPRInput:     aiPromptPRInput,
 		aiModels:           aiModels,
 		autoClaude:         autoClaude,
 		repoPath:           absoluteRepoPath,
@@ -1037,7 +1070,8 @@ func (m Model) generateCommitMessageWithAI(worktreePath string) tea.Cmd {
 		// Call OpenRouter API
 		model := m.configManager.GetOpenRouterModel()
 		client := openrouter.NewClient(apiKey, model)
-		subject, body, err := client.GenerateCommitMessage(diff)
+		customPrompt := m.configManager.GetCommitPrompt()
+		subject, body, err := client.GenerateCommitMessage(diff, customPrompt)
 		if err != nil {
 			return commitMessageGeneratedMsg{err: fmt.Errorf("failed to generate commit message: %w", err)}
 		}
@@ -1073,7 +1107,8 @@ func (m Model) generateRenameWithAI(worktreePath, baseBranch string) tea.Cmd {
 		// Call OpenRouter API
 		model := m.configManager.GetOpenRouterModel()
 		client := openrouter.NewClient(apiKey, model)
-		name, err := client.GenerateBranchName(diff)
+		customPrompt := m.configManager.GetBranchNamePrompt()
+		name, err := client.GenerateBranchName(diff, customPrompt)
 		if err != nil {
 			return renameGeneratedMsg{err: fmt.Errorf("failed to generate branch name: %w", err)}
 		}
@@ -1116,7 +1151,8 @@ func (m Model) generateBranchNameForPR(worktreePath, oldBranch, baseBranch strin
 		// Call AI
 		model := m.configManager.GetOpenRouterModel()
 		client := openrouter.NewClient(apiKey, model)
-		newName, err := client.GenerateBranchName(diff)
+		customPrompt := m.configManager.GetBranchNamePrompt()
+		newName, err := client.GenerateBranchName(diff, customPrompt)
 
 		return prBranchNameGeneratedMsg{
 			oldBranchName: oldBranch,
@@ -1187,7 +1223,8 @@ func (m Model) generatePRContent(worktreePath, branchName, baseBranch string) te
 		// Call AI to generate title and description
 		model := m.configManager.GetOpenRouterModel()
 		client := openrouter.NewClient(apiKey, model)
-		title, description, err := client.GeneratePRContent(diff)
+		customPrompt := m.configManager.GetPRPrompt()
+		title, description, err := client.GeneratePRContent(diff, customPrompt)
 
 		return prContentGeneratedMsg{
 			title:        title,
@@ -1209,9 +1246,9 @@ func (m Model) testOpenRouterAPIKey(apiKey, model string) tea.Cmd {
 		// Create a test client and make a simple API call
 		client := openrouter.NewClient(apiKey, model)
 
-		// Make a simple test prompt
-		testPrompt := "Say 'API key working' (only say that phrase, nothing else)"
-		_, _, err := client.GenerateCommitMessage(testPrompt)
+		// Make a simple test prompt - use empty custom prompt to use default
+		testDiff := "test content"
+		_, _, err := client.GenerateCommitMessage(testDiff, "")
 		if err != nil {
 			return apiKeyTestedMsg{success: false, err: err}
 		}
@@ -1289,7 +1326,8 @@ func (m Model) generateBranchNameForPush(worktreePath, oldBranch, baseBranch str
 		// Call AI
 		model := m.configManager.GetOpenRouterModel()
 		client := openrouter.NewClient(apiKey, model)
-		newName, err := client.GenerateBranchName(diff)
+		customPrompt := m.configManager.GetBranchNamePrompt()
+		newName, err := client.GenerateBranchName(diff, customPrompt)
 
 		return pushBranchNameGeneratedMsg{
 			oldBranchName: oldBranch,
@@ -1840,6 +1878,51 @@ func (m Model) mergePR(worktreePath, prURL, mergeMethod string) tea.Cmd {
 	}
 }
 
+// loadAIPrompts loads the current AI prompts from config
+func (m Model) loadAIPrompts() tea.Cmd {
+	return func() tea.Msg {
+		commitPrompt := m.configManager.GetCommitPrompt()
+		branchPrompt := m.configManager.GetBranchNamePrompt()
+		prPrompt := m.configManager.GetPRPrompt()
+
+		return aiPromptsLoadedMsg{
+			commitPrompt: commitPrompt,
+			branchPrompt: branchPrompt,
+			prPrompt:     prPrompt,
+			err:          nil,
+		}
+	}
+}
+
+// saveAIPrompts saves the customized AI prompts to config
+func (m Model) saveAIPrompts(commitPrompt, branchPrompt, prPrompt string) tea.Cmd {
+	return func() tea.Msg {
+		// Save each prompt
+		if err := m.configManager.SetCommitPrompt(commitPrompt); err != nil {
+			return aiPromptsSavedMsg{err: fmt.Errorf("failed to save commit prompt: %w", err)}
+		}
+		if err := m.configManager.SetBranchNamePrompt(branchPrompt); err != nil {
+			return aiPromptsSavedMsg{err: fmt.Errorf("failed to save branch prompt: %w", err)}
+		}
+		if err := m.configManager.SetPRPrompt(prPrompt); err != nil {
+			return aiPromptsSavedMsg{err: fmt.Errorf("failed to save PR prompt: %w", err)}
+		}
+
+		return aiPromptsSavedMsg{err: nil}
+	}
+}
+
+// resetAIPromptsToDefaults resets all prompts to their default values
+func (m Model) resetAIPromptsToDefaults() tea.Cmd {
+	return func() tea.Msg {
+		if err := m.configManager.ResetAIPromptsToDefaults(); err != nil {
+			return aiPromptsResetMsg{err: fmt.Errorf("failed to reset prompts: %w", err)}
+		}
+
+		return aiPromptsResetMsg{err: nil}
+	}
+}
+
 // Message types for PR merge operations
 
 type prMarkedReadyMsg struct {
@@ -1851,4 +1934,21 @@ type prMergedMsg struct {
 	prURL  string
 	branch string
 	err    error
+}
+
+// Message types for AI prompts modal
+
+type aiPromptsSavedMsg struct {
+	err error
+}
+
+type aiPromptsResetMsg struct {
+	err error
+}
+
+type aiPromptsLoadedMsg struct {
+	commitPrompt string
+	branchPrompt string
+	prPrompt     string
+	err          error
 }

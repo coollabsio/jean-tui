@@ -5,7 +5,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"github.com/coollabsio/gcool/openrouter"
 )
+
+// AIPrompts represents customizable AI prompts for various generation tasks
+type AIPrompts struct {
+	CommitMessage string `json:"commit_message,omitempty"` // Custom prompt for commit message generation
+	BranchName    string `json:"branch_name,omitempty"`    // Custom prompt for branch name generation
+	PRContent     string `json:"pr_content,omitempty"`     // Custom prompt for PR title and description generation
+}
 
 // Config represents the global gcool configuration
 type Config struct {
@@ -17,6 +25,7 @@ type Config struct {
 	AICommitEnabled     bool                   `json:"ai_commit_enabled,omitempty"` // Enable AI commit message generation
 	AIBranchNameEnabled bool                   `json:"ai_branch_name_enabled,omitempty"` // Enable AI branch name generation
 	DebugLoggingEnabled bool                   `json:"debug_logging_enabled"` // Enable debug logging to temp files
+	AIPrompts           *AIPrompts             `json:"ai_prompts,omitempty"` // Customizable AI prompts
 }
 
 // PRInfo represents information about a pull request
@@ -468,5 +477,65 @@ func (m *Manager) CleanupBranch(repoPath, branch string) error {
 		repo.LastSelectedBranch = ""
 	}
 
+	return m.save()
+}
+
+// GetCommitPrompt returns the custom commit message prompt
+// Returns the custom prompt if set, otherwise returns the default prompt
+func (m *Manager) GetCommitPrompt() string {
+	if m.config.AIPrompts != nil && m.config.AIPrompts.CommitMessage != "" {
+		return m.config.AIPrompts.CommitMessage
+	}
+	return openrouter.GetDefaultCommitPrompt()
+}
+
+// SetCommitPrompt sets the custom commit message prompt
+func (m *Manager) SetCommitPrompt(prompt string) error {
+	if m.config.AIPrompts == nil {
+		m.config.AIPrompts = &AIPrompts{}
+	}
+	m.config.AIPrompts.CommitMessage = prompt
+	return m.save()
+}
+
+// GetBranchNamePrompt returns the custom branch name prompt
+// Returns the custom prompt if set, otherwise returns the default prompt
+func (m *Manager) GetBranchNamePrompt() string {
+	if m.config.AIPrompts != nil && m.config.AIPrompts.BranchName != "" {
+		return m.config.AIPrompts.BranchName
+	}
+	return openrouter.GetDefaultBranchNamePrompt()
+}
+
+// SetBranchNamePrompt sets the custom branch name prompt
+func (m *Manager) SetBranchNamePrompt(prompt string) error {
+	if m.config.AIPrompts == nil {
+		m.config.AIPrompts = &AIPrompts{}
+	}
+	m.config.AIPrompts.BranchName = prompt
+	return m.save()
+}
+
+// GetPRPrompt returns the custom PR content prompt
+// Returns the custom prompt if set, otherwise returns the default prompt
+func (m *Manager) GetPRPrompt() string {
+	if m.config.AIPrompts != nil && m.config.AIPrompts.PRContent != "" {
+		return m.config.AIPrompts.PRContent
+	}
+	return openrouter.GetDefaultPRPrompt()
+}
+
+// SetPRPrompt sets the custom PR content prompt
+func (m *Manager) SetPRPrompt(prompt string) error {
+	if m.config.AIPrompts == nil {
+		m.config.AIPrompts = &AIPrompts{}
+	}
+	m.config.AIPrompts.PRContent = prompt
+	return m.save()
+}
+
+// ResetAIPromptsToDefaults resets all AI prompts to their default values
+func (m *Manager) ResetAIPromptsToDefaults() error {
+	m.config.AIPrompts = &AIPrompts{} // Empty AIPrompts means use defaults
 	return m.save()
 }

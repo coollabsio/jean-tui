@@ -392,8 +392,10 @@ func (m Model) renderMinimalHelpBar() string {
 		"n new",
 		"enter/t cli/terminal",
 		"c commit",
-		"g github",
 		"p push",
+		"P create PR",
+		"N from PR",
+		"g github",
 		"h help",
 		"q quit",
 	}
@@ -1824,7 +1826,8 @@ func (m Model) renderHelperModal() string {
 				key         string
 				description string
 			}{
-				{"P", "Select PR and create worktree from it"},
+				{"P", "Create new PR on GitHub"},
+				{"N", "Create worktree from existing PR"},
 				{"v", "Open PR in default browser"},
 			},
 		},

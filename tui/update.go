@@ -1398,7 +1398,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Open git repository in browser
 		if wt := m.selectedWorktree(); wt != nil {
 			return m, tea.Batch(
-				m.showInfoNotification("Opening in browser...", 2*time.Second),
+				m.showInfoNotification("Opening in browser..."),
 				m.openGitRepo(),
 			)
 		}

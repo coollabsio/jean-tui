@@ -131,6 +131,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case prDetailsLoadedForBranchMsg:
+		if msg.err != nil {
+			// Silently ignore errors - PR lookup failure is not critical
+			m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: ERROR for branch %s - %s", msg.branch, msg.err.Error()))
+			return m, nil
+		}
+
+		if msg.prURL == "" {
+			// No PR found for this branch - not an error, just nothing to do
+			m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: No PR found for branch %s", msg.branch))
+			return m, nil
+		}
+
+		// PR found - save to config and reload worktrees
+		m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: SUCCESS - found PR for branch %s: %s", msg.branch, msg.prURL))
+		if m.configManager != nil {
+			if err := m.configManager.AddPR(m.repoPath, msg.branch, msg.prURL); err != nil {
+				m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: Failed to save PR to config: %s", err.Error()))
+			} else {
+				m.debugLog("prDetailsLoadedForBranchMsg handler: PR saved to config successfully")
+			}
+		}
+
+		// Reload worktrees to display the updated PR info
+		return m, m.loadWorktrees()
+
 	case worktreeCreatedMsg:
 		if msg.err != nil {
 			// Check if this is a setup script error (warning) or a git error (error)
@@ -169,9 +195,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Quick refresh without expensive status checks
+			// Also load PR details asynchronously for the newly created branch
 			return m, tea.Batch(
 				cmd,
 				m.loadWorktrees(),
+				m.loadPRDetailsForBranch(msg.path, msg.branch),
 			)
 		}
 
@@ -214,9 +242,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			// Quick refresh without expensive status checks
+			// Also load PR details asynchronously for the newly created branch
 			return m, tea.Batch(
 				cmd,
 				m.loadWorktrees(),
+				m.loadPRDetailsForBranch(msg.path, msg.branch),
 			)
 		}
 
@@ -1239,9 +1269,9 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "r":
-		// Refresh: pull latest commits and refresh statuses
+		// Refresh: pull latest commits, refresh PR statuses, and load PR details for all worktrees
 		cmd = m.showInfoNotification("Pulling latest commits and refreshing...")
-		return m, tea.Batch(cmd, m.refreshWithPull(), m.refreshPRStatuses(), m.checkSessionActivity())
+		return m, tea.Batch(cmd, m.refreshWithPull(), m.refreshPRStatuses(), m.loadPRDetailsForAllWorktrees(), m.checkSessionActivity())
 
 	case "R":
 		// Run the 'run' script on selected worktree (Shift+R)

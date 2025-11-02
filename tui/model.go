@@ -475,6 +475,12 @@ type (
 		err error
 	}
 
+	prDetailsLoadedForBranchMsg struct {
+		branch string
+		prURL  string
+		err    error
+	}
+
 	worktreeCreatedMsg struct {
 		err    error
 		path   string
@@ -720,6 +726,27 @@ func (m Model) loadPRs() tea.Cmd {
 			}
 		}
 		return prsLoadedMsg{prs: prs, err: err}
+	}
+}
+
+// loadPRDetailsForBranch fetches PR details for a specific branch from GitHub
+func (m Model) loadPRDetailsForBranch(worktreePath, branch string) tea.Cmd {
+	return func() tea.Msg {
+		m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() called for branch: %s, worktree: %s", branch, worktreePath))
+
+		prURL, err := m.githubManager.GetPRForBranch(worktreePath, branch)
+		if err != nil {
+			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() failed with error: %s", err.Error()))
+			return prDetailsLoadedForBranchMsg{branch: branch, prURL: "", err: err}
+		}
+
+		if prURL == "" {
+			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() - no PR found for branch: %s", branch))
+		} else {
+			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() succeeded - found PR: %s", prURL))
+		}
+
+		return prDetailsLoadedForBranchMsg{branch: branch, prURL: prURL, err: nil}
 	}
 }
 
@@ -1303,6 +1330,52 @@ func (m Model) refreshPRStatuses() tea.Cmd {
 			worktrees[i].PRs = m.configManager.GetPRs(m.repoPath, worktrees[i].Branch)
 		}
 
+		return prStatusesRefreshedMsg{err: nil}
+	}
+}
+
+// loadPRDetailsForAllWorktrees loads PR details from GitHub for all worktrees asynchronously
+// This is used during refresh to discover PRs that may have been created outside gcool
+func (m Model) loadPRDetailsForAllWorktrees() tea.Cmd {
+	return func() tea.Msg {
+		m.debugLog("loadPRDetailsForAllWorktrees() called - checking all worktrees for PRs")
+
+		// For each worktree, check if it has any PRs in config
+		// If not, fetch from GitHub to see if a PR exists
+		for _, wt := range m.worktrees {
+			// Skip root worktree (main repo) - identified by IsCurrent
+			if wt.IsCurrent {
+				continue
+			}
+
+			// Check if we already have PR info for this branch
+			existingPRs := m.configManager.GetPRs(m.repoPath, wt.Branch)
+			if len(existingPRs) > 0 {
+				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: branch %s already has %d PR(s), skipping", wt.Branch, len(existingPRs)))
+				continue
+			}
+
+			// No PRs in config - fetch from GitHub
+			m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: checking GitHub for PR on branch %s", wt.Branch))
+			prURL, err := m.githubManager.GetPRForBranch(wt.Path, wt.Branch)
+			if err != nil {
+				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: error fetching PR for branch %s: %s", wt.Branch, err.Error()))
+				continue
+			}
+
+			if prURL != "" {
+				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: found PR for branch %s: %s", wt.Branch, prURL))
+				// Save to config
+				if err := m.configManager.AddPR(m.repoPath, wt.Branch, prURL); err != nil {
+					m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: failed to save PR to config: %s", err.Error()))
+				}
+			} else {
+				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: no PR found for branch %s", wt.Branch))
+			}
+		}
+
+		m.debugLog("loadPRDetailsForAllWorktrees: completed - triggering worktree reload")
+		// Return a message to trigger worktree reload to show updated PR info
 		return prStatusesRefreshedMsg{err: nil}
 	}
 }

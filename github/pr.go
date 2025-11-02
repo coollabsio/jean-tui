@@ -17,7 +17,7 @@ type PRInfo struct {
 	Title       string `json:"title"`
 	HeadRefName string `json:"headRefName"`
 	URL         string `json:"url"`
-	Status      string `json:"status"` // "open", "merged", or "closed"
+	Status      string `json:"state"` // "OPEN", "MERGED", or "CLOSED"
 	Author      struct {
 		Login string `json:"login"`
 	} `json:"author"`
@@ -110,21 +110,32 @@ func (m *Manager) GetPRStatus(prURL string) (string, error) {
 	return status, nil
 }
 
-// GetPRForBranch gets the PR URL for a given branch (if it exists)
-func (m *Manager) GetPRForBranch(worktreePath, branch string) (string, error) {
-	// Search for PR on this branch
-	cmd := exec.Command("gh", "pr", "list", "--head", branch, "--json", "url", "--jq", ".[0].url")
+// GetPRForBranch gets the PR details for a given branch (if it exists)
+func (m *Manager) GetPRForBranch(worktreePath, branch string) (*PRInfo, error) {
+	// Search for PR on this branch with full details (including closed/merged)
+	cmd := exec.Command("gh", "pr", "list",
+		"--head", branch,
+		"--state", "all",
+		"--json", "number,title,headRefName,url,state,author",
+		"--jq", ".[0]")
 	cmd.Dir = worktreePath
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to search for PR: %s", string(output))
+		return nil, fmt.Errorf("failed to search for PR: %s", string(output))
 	}
 
-	prURL := strings.TrimSpace(string(output))
-	if prURL == "" || prURL == "null" {
-		return "", nil // No PR found
+	outputStr := strings.TrimSpace(string(output))
+	if outputStr == "" || outputStr == "null" {
+		return nil, nil // No PR found
 	}
-	return prURL, nil
+
+	// Parse the JSON response
+	var prInfo PRInfo
+	if err := json.Unmarshal([]byte(outputStr), &prInfo); err != nil {
+		return nil, fmt.Errorf("failed to parse PR info: %w", err)
+	}
+
+	return &prInfo, nil
 }
 
 // UpdatePR updates the title and/or description of an existing PR

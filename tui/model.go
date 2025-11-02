@@ -476,9 +476,12 @@ type (
 	}
 
 	prDetailsLoadedForBranchMsg struct {
-		branch string
-		prURL  string
-		err    error
+		branch   string
+		prURL    string
+		prNumber int
+		title    string
+		author   string
+		err      error
 	}
 
 	worktreeCreatedMsg struct {
@@ -734,19 +737,26 @@ func (m Model) loadPRDetailsForBranch(worktreePath, branch string) tea.Cmd {
 	return func() tea.Msg {
 		m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() called for branch: %s, worktree: %s", branch, worktreePath))
 
-		prURL, err := m.githubManager.GetPRForBranch(worktreePath, branch)
+		prInfo, err := m.githubManager.GetPRForBranch(worktreePath, branch)
 		if err != nil {
 			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() failed with error: %s", err.Error()))
 			return prDetailsLoadedForBranchMsg{branch: branch, prURL: "", err: err}
 		}
 
-		if prURL == "" {
+		if prInfo == nil {
 			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() - no PR found for branch: %s", branch))
-		} else {
-			m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() succeeded - found PR: %s", prURL))
+			return prDetailsLoadedForBranchMsg{branch: branch, prURL: "", err: nil}
 		}
 
-		return prDetailsLoadedForBranchMsg{branch: branch, prURL: prURL, err: nil}
+		m.debugLog(fmt.Sprintf("loadPRDetailsForBranch() succeeded - found PR: %s", prInfo.URL))
+		return prDetailsLoadedForBranchMsg{
+			branch:   branch,
+			prURL:    prInfo.URL,
+			prNumber: prInfo.Number,
+			title:    prInfo.Title,
+			author:   prInfo.Author.Login,
+			err:      nil,
+		}
 	}
 }
 
@@ -1011,7 +1021,7 @@ func (m Model) createOrUpdatePR(worktreePath, branch string, title string, descr
 		}
 
 		// Check if a PR already exists for this branch
-		existingPRURL, err := m.githubManager.GetPRForBranch(worktreePath, branch)
+		existingPR, err := m.githubManager.GetPRForBranch(worktreePath, branch)
 		if err != nil {
 			return prCreatedMsg{err: fmt.Errorf("failed to check for existing PR: %w", err), branch: branch, worktreePath: worktreePath}
 		}
@@ -1023,11 +1033,11 @@ func (m Model) createOrUpdatePR(worktreePath, branch string, title string, descr
 		}
 
 		// If PR exists, update it instead of creating a new one
-		if existingPRURL != "" {
+		if existingPR != nil {
 			if err := m.githubManager.UpdatePR(worktreePath, branch, title, description); err != nil {
 				return prCreatedMsg{err: err, branch: branch, worktreePath: worktreePath}
 			}
-			return prCreatedMsg{prURL: existingPRURL, branch: branch, worktreePath: worktreePath, prTitle: title, author: author}
+			return prCreatedMsg{prURL: existingPR.URL, branch: branch, worktreePath: worktreePath, prTitle: title, author: author}
 		}
 
 		// PR doesn't exist, create a new one
@@ -1357,16 +1367,16 @@ func (m Model) loadPRDetailsForAllWorktrees() tea.Cmd {
 
 			// No PRs in config - fetch from GitHub
 			m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: checking GitHub for PR on branch %s", wt.Branch))
-			prURL, err := m.githubManager.GetPRForBranch(wt.Path, wt.Branch)
+			prInfo, err := m.githubManager.GetPRForBranch(wt.Path, wt.Branch)
 			if err != nil {
 				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: error fetching PR for branch %s: %s", wt.Branch, err.Error()))
 				continue
 			}
 
-			if prURL != "" {
-				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: found PR for branch %s: %s", wt.Branch, prURL))
-				// Save to config
-				if err := m.configManager.AddPR(m.repoPath, wt.Branch, prURL); err != nil {
+			if prInfo != nil {
+				m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: found PR for branch %s: %s", wt.Branch, prInfo.URL))
+				// Save to config with full PR details
+				if err := m.configManager.AddPR(m.repoPath, wt.Branch, prInfo.URL, prInfo.Number, prInfo.Title, prInfo.Author.Login); err != nil {
 					m.debugLog(fmt.Sprintf("loadPRDetailsForAllWorktrees: failed to save PR to config: %s", err.Error()))
 				}
 			} else {

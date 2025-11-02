@@ -147,7 +147,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// PR found - save to config and reload worktrees
 		m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: SUCCESS - found PR for branch %s: %s", msg.branch, msg.prURL))
 		if m.configManager != nil {
-			if err := m.configManager.AddPR(m.repoPath, msg.branch, msg.prURL); err != nil {
+			if err := m.configManager.AddPR(m.repoPath, msg.branch, msg.prURL, msg.prNumber, msg.title, msg.author); err != nil {
 				m.debugLog(fmt.Sprintf("prDetailsLoadedForBranchMsg handler: Failed to save PR to config: %s", err.Error()))
 			} else {
 				m.debugLog("prDetailsLoadedForBranchMsg handler: PR saved to config successfully")

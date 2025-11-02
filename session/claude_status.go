@@ -38,7 +38,7 @@ type StatusDetector struct {
 func NewStatusDetector(sessionName string) *StatusDetector {
 	return &StatusDetector{
 		sessionName:     sessionName,
-		stableThreshold: 2 * time.Second,
+		stableThreshold: 500 * time.Millisecond,
 	}
 }
 
@@ -92,13 +92,12 @@ func (d *StatusDetector) isBusy(output string) bool {
 
 	// Check if output has changed (activity detected)
 	if d.lastOutput != "" && d.lastOutput != output {
+		// Output changed - update tracking but don't immediately mark as busy
+		// The busy indicators above already catch active processing
 		d.lastOutput = output
 		d.lastOutputTime = time.Now()
-		// Recent activity suggests busy state
-		if time.Since(d.lastOutputTime) < 500*time.Millisecond {
-			return true
-		}
 	} else if d.lastOutput == "" {
+		// First time seeing output - initialize tracking
 		d.lastOutput = output
 		d.lastOutputTime = time.Now()
 	}

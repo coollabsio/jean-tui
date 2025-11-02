@@ -452,7 +452,8 @@ func (m Model) Init() tea.Cmd {
 		m.loadBaseBranch(),
 		m.loadSessions(),
 		m.scheduleActivityCheck(),
-		m.scheduleClaudeStatusCheck(),
+		m.pollClaudeStatuses(),           // Immediate first poll
+		m.scheduleClaudeStatusCheck(),    // Schedule periodic polls
 		m.scheduleClaudeStatusAnimationTick(),
 		tea.EnterAltScreen,
 	)

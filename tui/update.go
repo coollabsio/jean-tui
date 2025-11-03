@@ -361,7 +361,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.prRetryBranch = msg.branch
 
 						// Trigger PR content regeneration
-						cmd = m.showWarningNotification("PR already exists. Regenerating content with AI...")
+						cmd = m.showWarningNotification("PR already exists. Regenerating title and description...")
 						return m, tea.Batch(cmd, m.generatePRContent(msg.worktreePath, msg.branch, m.baseBranch))
 					}
 				}
@@ -1068,7 +1068,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if hasUncommitted {
 				if hasAI && aiContentEnabled {
 					// AI is enabled for commit messages - generate commit message with AI first
-					cmd := m.showInfoNotification("🤖 Generating commit message...")
+					cmd := m.showInfoNotification("🤖 Generating conventional commit message...")
 					m.commitBeforePR = true
 					m.prCreationPending = wt.Path // Set to trigger PR creation after commit
 					return m, tea.Batch(cmd, m.generateCommitMessageWithAI(wt.Path))
@@ -1646,7 +1646,7 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.generatingCommit = true
 				m.spinnerFrame = 0
 				m.autoCommitWithAI = true    // Flag for standalone auto-commit
-				notifyCmd := m.showInfoNotification("⏳ Generating commit message with AI...")
+				notifyCmd := m.showInfoNotification("🤖 Generating commit message...")
 				return m, tea.Batch(
 					notifyCmd,
 					m.animateSpinner(),

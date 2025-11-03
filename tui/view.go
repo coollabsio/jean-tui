@@ -403,6 +403,8 @@ func (m Model) renderModal() string {
 		return m.renderPRContentModal()
 	case prListModal:
 		return m.renderPRListModal()
+	case prTypeModal:
+		return m.renderPRTypeModal()
 	case mergeStrategyModal:
 		return m.renderMergeStrategyModal()
 	case helperModal:
@@ -2267,6 +2269,52 @@ func (m Model) renderMergeStrategyModal() string {
 		// Add description
 		descStyle := normalItemStyle.Copy().Foreground(mutedColor)
 		b.WriteString(descStyle.Render("  " + strategy.description))
+		b.WriteString("\n\n")
+	}
+
+	// Help text
+	b.WriteString(helpStyle.Render("↑/↓ select • enter confirm • esc cancel"))
+
+	// Center the modal
+	content := modalStyle.Width(m.width - 4).Render(b.String())
+	return lipgloss.Place(
+		m.width, m.height,
+		lipgloss.Center, lipgloss.Center,
+		content,
+	)
+}
+
+func (m Model) renderPRTypeModal() string {
+	var b strings.Builder
+
+	b.WriteString(modalTitleStyle.Render("Select Pull Request Type"))
+	b.WriteString("\n\n")
+
+	// PR type options with descriptions
+	prTypes := []struct {
+		name        string
+		description string
+	}{
+		{"Draft PR", "Create as draft (not ready for review)"},
+		{"Ready for review", "Create as ready for review (default)"},
+	}
+
+	for i, prType := range prTypes {
+		isSelected := i == m.prTypeCursor
+
+		var prTypeText string
+		if isSelected {
+			prTypeText = selectedItemStyle.Render("▶ " + prType.name)
+		} else {
+			prTypeText = normalItemStyle.Render("  " + prType.name)
+		}
+
+		b.WriteString(prTypeText)
+		b.WriteString("\n")
+
+		// Add description
+		descStyle := normalItemStyle.Copy().Foreground(mutedColor)
+		b.WriteString(descStyle.Render("  " + prType.description))
 		b.WriteString("\n\n")
 	}
 

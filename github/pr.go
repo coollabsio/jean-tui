@@ -48,8 +48,8 @@ func (m *Manager) IsAuthenticated() (bool, error) {
 	return true, nil
 }
 
-// CreateDraftPR creates a draft pull request
-func (m *Manager) CreateDraftPR(worktreePath, branch, baseBranch, title, description string) (string, error) {
+// CreatePR creates a pull request (draft or ready for review)
+func (m *Manager) CreatePR(worktreePath, branch, baseBranch, title, description string, isDraft bool) (string, error) {
 	// Check if gh is installed
 	if !m.IsGhInstalled() {
 		return "", fmt.Errorf("gh CLI is not installed. Install it from https://cli.github.com")
@@ -64,14 +64,18 @@ func (m *Manager) CreateDraftPR(worktreePath, branch, baseBranch, title, descrip
 		return "", fmt.Errorf("not authenticated with GitHub. Run 'gh auth login' to authenticate")
 	}
 
-	// Create draft PR with title and description
+	// Create PR with title and description
 	args := []string{
 		"pr", "create",
-		"--draft",
 		"--base", baseBranch,
 		"--head", branch,
 		"--title", title,
 		"--body", description,
+	}
+
+	// Add draft flag if requested
+	if isDraft {
+		args = append(args, "--draft")
 	}
 
 	cmd := exec.Command("gh", args...)

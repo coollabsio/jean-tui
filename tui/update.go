@@ -581,9 +581,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cmd = m.showInfoNotification("🤖 Generating semantic branch name...")
 					return m, tea.Batch(cmd, m.generateBranchNameForPR(m.prCreationPending, branch, m.baseBranch))
 				} else {
-					// No AI rename needed, go straight to generating PR content
-					cmd = m.showInfoNotification("🤖 Generating PR content...")
-					return m, tea.Batch(cmd, m.generatePRContent(m.prCreationPending, branch, m.baseBranch))
+					// No AI rename needed - show PR type selection modal
+					m.modal = prTypeModal
+					m.prModalWorktreePath = m.prCreationPending
+					m.prModalBranch = branch
+					m.prTypeCursor = 1 // Default to "Ready for review"
+					m.commitBeforePR = false
+					m.prCreationPending = ""
+					return m, m.showSuccessNotification("Committed successfully. Select PR type:", 2*time.Second)
 				}
 			}
 
@@ -637,31 +642,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		isRandomName := m.gitManager.IsRandomBranchName(msg.branch)
 
 		shouldAIRename := hasAPIKey && aiEnabled && isRandomName
-		shouldAIContent := hasAPIKey && aiEnabled
 
 		if shouldAIRename {
 			// Start AI rename flow before PR creation
 			cmd = m.showInfoNotification("🤖 Generating semantic branch name...")
 			return m, tea.Batch(cmd, m.generateBranchNameForPR(msg.worktreePath, msg.branch, m.baseBranch))
-		} else if shouldAIContent {
-			// Generate AI PR content (title and description) even without branch rename
-			cmd = m.showInfoNotification("🤖 Generating PR title and description...")
-			return m, tea.Batch(cmd, m.generatePRContent(msg.worktreePath, msg.branch, m.baseBranch))
 		} else {
-			// No AI available - open PR content modal for manual entry
-			m.modal = prContentModal
-			m.prModalFocused = 0
+			// No AI rename needed - show PR type selection modal
+			m.modal = prTypeModal
 			m.prModalWorktreePath = msg.worktreePath
 			m.prModalBranch = msg.branch
-
-			// Default title to branch name
-			defaultTitle := strings.ReplaceAll(msg.branch, "-", " ")
-			defaultTitle = strings.ReplaceAll(defaultTitle, "_", " ")
-			defaultTitle = strings.Title(defaultTitle)
-			m.prTitleInput.SetValue(defaultTitle)
-			m.prTitleInput.Focus()
-			m.prDescriptionInput.SetValue("")
-
+			m.prTypeCursor = 1 // Default to "Ready for review"
 			return m, nil
 		}
 
@@ -1102,30 +1093,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.prCreationPending = wt.Path // Set to trigger PR creation after rename
 				return m, tea.Batch(cmd, m.generateBranchNameForPush(wt.Path, wt.Branch, m.baseBranch))
 			} else {
-				// Check if we should generate AI PR content
-				if hasAPIKey && aiEnabled {
-					// Generate AI PR content before creating PR
-					cmd := m.showInfoNotification("🤖 Generating PR title and description...")
-					return m, tea.Batch(
-						cmd,
-						m.generatePRContent(wt.Path, wt.Branch, m.baseBranch),
-					)
-				} else {
-					// No AI - open PR content modal for manual entry
-					m.modal = prContentModal
-					m.prModalFocused = 0
-					m.prModalWorktreePath = wt.Path
-					m.prModalBranch = wt.Branch
-
-					// Default title to branch name
-					defaultTitle := strings.ReplaceAll(wt.Branch, "-", " ")
-					defaultTitle = strings.ReplaceAll(defaultTitle, "_", " ")
-					defaultTitle = strings.Title(defaultTitle)
-					m.prTitleInput.SetValue(defaultTitle)
-					m.prTitleInput.Focus()
-					m.prDescriptionInput.SetValue("")
-					return m, nil
-				}
+				// No AI rename needed - show PR type selection modal first
+				m.modal = prTypeModal
+				m.prModalWorktreePath = wt.Path
+				m.prModalBranch = wt.Branch
+				m.prTypeCursor = 1 // Default to "Ready for review"
+				return m, nil
 			}
 		}
 
@@ -1793,6 +1766,9 @@ func (m Model) handleModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case prListModal:
 		return m.handlePRListModalInput(msg)
+
+	case prTypeModal:
+		return m.handlePRTypeModalInput(msg)
 
 	case mergeStrategyModal:
 		return m.handleMergeStrategyModalInput(msg)
@@ -2748,6 +2724,53 @@ func (m Model) handleMergeStrategyModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd
 			notifyCmd,
 			m.mergePR(wt.Path, selectedPR.URL, mergeMethod),
 		)
+	}
+
+	return m, nil
+}
+
+func (m Model) handlePRTypeModalInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.modal = noModal
+		return m, nil
+
+	case "up":
+		if m.prTypeCursor > 0 {
+			m.prTypeCursor--
+		}
+		return m, nil
+
+	case "down":
+		if m.prTypeCursor < 1 {
+			m.prTypeCursor++
+		}
+		return m, nil
+
+	case "enter":
+		// User confirmed PR type selection
+		// Set isDraft based on selection (0=draft, 1=ready for review)
+		m.prIsDraft = (m.prTypeCursor == 0)
+
+		// Close modal and proceed to AI generation or PR content modal
+		m.modal = noModal
+
+		// Check if AI is enabled for PR content generation
+		aiEnabled := m.configManager != nil &&
+			m.configManager.GetOpenRouterAPIKey() != "" &&
+			m.aiCommitEnabled
+
+		if aiEnabled {
+			// Generate PR content with AI
+			return m, m.generatePRContent(m.prModalWorktreePath, m.prModalBranch, m.baseBranch)
+		}
+
+		// No AI - open PR content modal for manual input
+		m.modal = prContentModal
+		m.prModalFocused = 0
+		m.prTitleInput.Focus()
+		m.prDescriptionInput.Blur()
+		return m, nil
 	}
 
 	return m, nil

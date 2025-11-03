@@ -11,6 +11,7 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/coollabsio/gcool/config"
 	"github.com/coollabsio/gcool/install"
 	"github.com/coollabsio/gcool/internal/update"
 	versionpkg "github.com/coollabsio/gcool/internal/version"
@@ -173,16 +174,48 @@ func main() {
 }
 
 // ensureShellIntegration checks if shell integration is installed and active.
-// If not installed, it installs it, sources the RC file, and re-executes gcool.
-// Returns nil if wrapper is already active, otherwise performs init and re-exec.
+// Automatically installs or updates wrapper if needed using checksum comparison.
+// Returns nil if wrapper is already active, otherwise performs init/update and re-exec.
 func ensureShellIntegration() error {
 	// Check if wrapper is already active
 	if os.Getenv("GCOOL_SWITCH_FILE") != "" {
-		return nil // Wrapper is active, no need to init
+		// Wrapper is active, but check if it needs update
+		cfg, err := config.NewManager()
+		if err != nil {
+			// Config load failed, continue anyway (non-critical)
+			return nil
+		}
+
+		detector, err := install.NewDetector()
+		if err != nil {
+			// Detector creation failed, continue anyway (non-critical)
+			return nil
+		}
+
+		// Check if update is needed (compare checksums)
+		if detector.NeedsUpdate(cfg) {
+			// Silently update wrapper in background
+			if err := detector.AutoUpdate(cfg); err != nil {
+				// Update failed, but wrapper is still functional (non-critical)
+				// Just log to debug if enabled
+				debugLog(fmt.Sprintf("Wrapper auto-update failed: %v", err))
+			} else {
+				// Update succeeded
+				debugLog("Wrapper auto-updated successfully")
+			}
+		}
+
+		return nil // Wrapper is active, continue to TUI
 	}
 
 	// Set flag to prevent infinite loop
 	os.Setenv("GCOOL_INIT_ATTEMPTED", "1")
+
+	// Load config for checksum tracking
+	cfg, err := config.NewManager()
+	if err != nil {
+		return fmt.Errorf("failed to load config: %w", err)
+	}
 
 	// Create detector
 	detector, err := install.NewDetector()
@@ -190,23 +223,24 @@ func ensureShellIntegration() error {
 		return fmt.Errorf("failed to create detector: %w", err)
 	}
 
-	// Check if already installed
-	if detector.IsInstalled() {
-		// Already installed, just source it and re-exec
-		fmt.Fprintf(os.Stderr, "✓ Activating shell integration...\n")
-		if err := sourceAndReexec(detector); err != nil {
-			return fmt.Errorf("failed to source and re-execute: %w", err)
+	// Check if wrapper needs installation or update
+	if detector.NeedsUpdate(cfg) {
+		wasInstalled := detector.IsInstalled()
+
+		// Perform auto-update (handles both install and update)
+		if err := detector.AutoUpdate(cfg); err != nil {
+			return fmt.Errorf("failed to setup wrapper: %w", err)
 		}
-		return nil
+
+		// Show appropriate message
+		if wasInstalled {
+			fmt.Fprintf(os.Stderr, "✓ Shell wrapper updated\n")
+		} else {
+			fmt.Fprintf(os.Stderr, "✓ Shell integration installed\n")
+		}
 	}
 
-	// Not installed yet, install it
-	fmt.Fprintf(os.Stderr, "Setting up shell integration...\n")
-	if err := detector.Install(false); err != nil {
-		return fmt.Errorf("failed to install: %w", err)
-	}
-
-	// Now source the RC file and re-execute gcool in the same shell session
+	// Source the RC file and re-execute gcool in the same shell session
 	if err := sourceAndReexec(detector); err != nil {
 		return fmt.Errorf("failed to source and re-execute: %w", err)
 	}

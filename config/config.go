@@ -26,6 +26,7 @@ type Config struct {
 	AIBranchNameEnabled bool                   `json:"ai_branch_name_enabled,omitempty"` // Enable AI branch name generation
 	DebugLoggingEnabled bool                   `json:"debug_logging_enabled"` // Enable debug logging to temp files
 	AIPrompts           *AIPrompts             `json:"ai_prompts,omitempty"` // Customizable AI prompts
+	WrapperChecksums    map[string]string      `json:"wrapper_checksums,omitempty"` // Shell -> SHA256 checksum of installed wrapper
 }
 
 // PRInfo represents information about a pull request
@@ -552,5 +553,23 @@ func (m *Manager) SetPRPrompt(prompt string) error {
 // ResetAIPromptsToDefaults resets all AI prompts to their default values
 func (m *Manager) ResetAIPromptsToDefaults() error {
 	m.config.AIPrompts = &AIPrompts{} // Empty AIPrompts means use defaults
+	return m.save()
+}
+
+// GetWrapperChecksum returns the stored checksum for a shell wrapper
+// Returns empty string if no checksum is stored
+func (m *Manager) GetWrapperChecksum(shell string) string {
+	if m.config.WrapperChecksums == nil {
+		return ""
+	}
+	return m.config.WrapperChecksums[shell]
+}
+
+// SetWrapperChecksum stores the checksum for a shell wrapper
+func (m *Manager) SetWrapperChecksum(shell, checksum string) error {
+	if m.config.WrapperChecksums == nil {
+		m.config.WrapperChecksums = make(map[string]string)
+	}
+	m.config.WrapperChecksums[shell] = checksum
 	return m.save()
 }

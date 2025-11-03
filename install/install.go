@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/coollabsio/gcool/config"
 )
 
 // Shell represents a shell type
@@ -264,4 +266,103 @@ func copyFile(src, dst string) error {
 	}
 
 	return os.WriteFile(dst, content, 0644)
+}
+
+// NeedsUpdate checks if the wrapper needs to be updated
+// Returns true if:
+// - Wrapper is not installed, OR
+// - Installed wrapper checksum differs from current template checksum
+func (d *Detector) NeedsUpdate(cfg *config.Manager) bool {
+	// Not installed = needs update (installation)
+	if !d.IsInstalled() {
+		return true
+	}
+
+	// Calculate current template checksum
+	currentChecksum := CalculateWrapperChecksum(d.Shell)
+
+	// Get stored checksum from config
+	storedChecksum := cfg.GetWrapperChecksum(string(d.Shell))
+
+	// If no stored checksum or different checksum, needs update
+	return storedChecksum == "" || storedChecksum != currentChecksum
+}
+
+// AutoUpdate performs an automatic silent update of the wrapper
+// This is called on every startup to ensure wrapper is up-to-date
+// Returns error only for critical failures; non-critical errors are logged
+func (d *Detector) AutoUpdate(cfg *config.Manager) error {
+	wrapper := d.GetWrapper()
+	currentChecksum := CalculateWrapperChecksum(d.Shell)
+
+	// If not installed, perform installation
+	if !d.IsInstalled() {
+		// Create directory if it doesn't exist (for fish)
+		rcDir := filepath.Dir(d.RCFile)
+		if err := os.MkdirAll(rcDir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory %s: %w", rcDir, err)
+		}
+
+		// Read existing content
+		content, _ := os.ReadFile(d.RCFile)
+		existingContent := string(content)
+
+		// Append wrapper to rc file
+		newContent := existingContent
+		if !strings.HasSuffix(newContent, "\n") && newContent != "" {
+			newContent += "\n"
+		}
+		newContent += "\n" + wrapper + "\n"
+
+		if err := os.WriteFile(d.RCFile, []byte(newContent), 0644); err != nil {
+			return fmt.Errorf("failed to write to %s: %w", d.RCFile, err)
+		}
+
+		// Store checksum
+		if err := cfg.SetWrapperChecksum(string(d.Shell), currentChecksum); err != nil {
+			// Non-critical: wrapper is installed, just checksum storage failed
+			return nil
+		}
+
+		return nil
+	}
+
+	// Wrapper is installed, perform update
+	content, err := os.ReadFile(d.RCFile)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", d.RCFile, err)
+	}
+
+	contentStr := string(content)
+
+	// Remove old integration
+	startMarker := "# BEGIN GCOOL INTEGRATION"
+	endMarker := "# END GCOOL INTEGRATION"
+
+	startIdx := strings.Index(contentStr, startMarker)
+	endIdx := strings.Index(contentStr, endMarker)
+
+	if startIdx == -1 || endIdx == -1 {
+		return fmt.Errorf("could not find gcool integration markers in %s", d.RCFile)
+	}
+
+	// Remove everything from start marker to end marker (inclusive)
+	newContent := contentStr[:startIdx] + wrapper + "\n" + contentStr[endIdx+len(endMarker):]
+
+	// Clean up extra newlines
+	for strings.Contains(newContent, "\n\n\n") {
+		newContent = strings.ReplaceAll(newContent, "\n\n\n", "\n\n")
+	}
+
+	if err := os.WriteFile(d.RCFile, []byte(newContent), 0644); err != nil {
+		return fmt.Errorf("failed to write to %s: %w", d.RCFile, err)
+	}
+
+	// Store new checksum
+	if err := cfg.SetWrapperChecksum(string(d.Shell), currentChecksum); err != nil {
+		// Non-critical: wrapper is updated, just checksum storage failed
+		return nil
+	}
+
+	return nil
 }

@@ -37,6 +37,39 @@ go build -o jean
 ./jean --no-claude
 ```
 
+## Release Process
+
+Follow these steps when releasing a new version:
+
+1. **Bump Version**: Update the `const version` in `main.go` to the new version number
+   - Always bump the minor version (e.g., 0.1.3 → 0.1.4) by default
+   - Only use patch or major version bumps if explicitly instructed otherwise
+   - Commit this change: `git add main.go && git commit -m "chore: bump version to X.Y.Z"`
+   - Push to remote: `git push`
+
+2. **Create Draft Release**: Use GitHub CLI to create a draft release with release notes
+   ```bash
+   gh release create vX.Y.Z --draft --title "vX.Y.Z" --notes "$(cat <<'EOF'
+   ## What's New
+
+   ### Features
+   - List new features here
+
+   ### Fixes
+   - List bug fixes here
+
+   ### Other
+   - Other changes
+
+   ## Installation
+
+   See the [README](https://github.com/coollabsio/jean#installation) for installation instructions.
+   EOF
+   )"
+   ```
+
+3. **Review and Publish**: Review the draft release on GitHub and publish when ready
+
 ## Architecture
 
 The application follows a clean separation of concerns:

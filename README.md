@@ -67,13 +67,13 @@ A powerful, feature-rich terminal user interface for managing Git worktrees with
 The easiest way to install jean - just run the installation script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coollabsio/jean/main/install.sh | bash
+curl -fsSL https://github.com/coollabsio/jean/raw/main/install.sh | bash
 ```
 
 Or if you prefer to review before running:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/coollabsio/jean/main/install.sh -o install.sh
+curl -fsSL https://github.com/coollabsio/jean/raw/main/install.sh -o install.sh
 chmod +x install.sh
 ./install.sh
 ```

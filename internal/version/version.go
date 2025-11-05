@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	CliVersion   = "0.1.0"
+	CliVersion    = "0.1.5"
 	CheckInterval = 10 * time.Minute
-	repoOwner    = "coollabsio"
-	repoName     = "jean"
+	repoOwner     = "coollabsio"
+	repoName      = "jean"
 )
 
 // GitRef represents a git reference from GitHub API

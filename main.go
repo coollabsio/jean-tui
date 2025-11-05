@@ -14,10 +14,9 @@ import (
 	"github.com/coollabsio/jean/config"
 	"github.com/coollabsio/jean/install"
 	"github.com/coollabsio/jean/internal/update"
+	"github.com/coollabsio/jean/internal/version"
 	"github.com/coollabsio/jean/tui"
 )
-
-const version = "0.1.5"
 
 // Global flag for debug logging (set after config is loaded)
 var debugLoggingEnabled bool = false
@@ -80,7 +79,7 @@ func main() {
 			handleUpdate()
 			return
 		case "version":
-			fmt.Printf("jean version %s\n", version)
+			fmt.Printf("jean version %s\n", version.CliVersion)
 			os.Exit(0)
 		case "help":
 			printHelp()
@@ -98,7 +97,7 @@ func main() {
 
 	// Handle flags
 	if *versionFlag {
-		fmt.Printf("jean version %s\n", version)
+		fmt.Printf("jean version %s\n", version.CliVersion)
 		os.Exit(0)
 	}
 
@@ -350,11 +349,11 @@ func getRCFileForShell(shell install.Shell, homeDir string) string {
 }
 
 func printHelp() {
-	fmt.Printf(`jean - A Cool TUI for Git Worktrees & Running CLI-Based AI Assistants Simultaneously v%s
+	fmt.Printf(`jean - AI-Powered Git Worktree TUI with Claude Code Support v%s
 
-A beautiful terminal user interface for managing Git worktrees with integrated tmux
-session management, letting you run multiple Claude CLI sessions across different
-branches effortlessly.
+A powerful terminal user interface for managing Git worktrees with integrated tmux
+session management, AI-powered workflows, GitHub PR automation, and Claude Code
+integration across multiple branches effortlessly.
 
 USAGE:
     jean [OPTIONS]
@@ -428,7 +427,7 @@ EXAMPLES:
     jean init --remove
 
 For more information, visit: https://github.com/coollabsio/jean
-`, version)
+`, version.CliVersion)
 }
 
 // isRunningInWSL checks if the application is running inside WSL (Windows Subsystem for Linux)
@@ -472,7 +471,7 @@ func toUpper(c byte) byte {
 
 // handleUpdate handles the update subcommand
 func handleUpdate() {
-	if err := update.UpdateJean(version); err != nil {
+	if err := update.UpdateJean(version.CliVersion); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}

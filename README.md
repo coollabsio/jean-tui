@@ -1,6 +1,6 @@
-# jean - AI-Powered Git Worktree Management & Development Workflow Automation
+# jean - AI-Powered Git Worktree TUI with Claude Code Support
 
-A powerful, feature-rich terminal user interface for managing Git worktrees with integrated tmux session management, GitHub PR automation, AI-powered commit messages & branch naming, and custom script execution. Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and designed for developers who work with multiple feature branches simultaneously while leveraging AI to streamline their workflow.
+A powerful, feature-rich terminal user interface for managing Git worktrees with integrated tmux session management, GitHub PR automation, AI-powered commit messages & branch naming, custom script execution, and seamless Claude Code integration. Built with [Bubble Tea](https://github.com/charmbracelet/bubbletea) and designed for developers who work with multiple feature branches simultaneously while leveraging AI to streamline their workflow.
 
 > **Why "jean"?** Named after Jean-Claude Van Damme - combining "Jean" (the CLI) with "Claude" (AI integration). A perfect martial arts kick of productivity! 🥋
 

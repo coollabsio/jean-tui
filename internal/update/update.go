@@ -1,12 +1,15 @@
 package update
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	gover "github.com/hashicorp/go-version"
@@ -144,29 +147,32 @@ func downloadAndInstall(ctx context.Context, release *Release, exePath string) e
 		return err
 	}
 
+	// Check if we need sudo (file is in a protected location)
+	needsSudo := !isWritable(filepath.Dir(exePath))
+
 	// Replace the current executable
 	// First, make a backup
 	backup := exePath + ".backup"
-	if err := os.Rename(exePath, backup); err != nil {
+	if err := renameFile(backup, exePath, needsSudo); err != nil {
 		return fmt.Errorf("failed to create backup: %w", err)
 	}
 
 	// Copy the new binary
-	if err := copyFile(extractedPath, exePath); err != nil {
+	if err := copyFileTo(extractedPath, exePath, needsSudo); err != nil {
 		// Restore the backup
-		os.Rename(backup, exePath)
+		renameFile(exePath, backup, needsSudo)
 		return fmt.Errorf("failed to install new binary: %w", err)
 	}
 
 	// Make it executable
-	if err := os.Chmod(exePath, 0755); err != nil {
+	if err := chmodFile(exePath, 0755, needsSudo); err != nil {
 		// Restore the backup
-		os.Rename(backup, exePath)
+		renameFile(exePath, backup, needsSudo)
 		return fmt.Errorf("failed to make binary executable: %w", err)
 	}
 
 	// Remove the backup
-	os.Remove(backup)
+	removeFile(backup, needsSudo)
 
 	return nil
 }
@@ -217,12 +223,59 @@ func downloadFile(ctx context.Context, url, filePath string) error {
 
 // extractBinary extracts the jean binary from a tar.gz file
 func extractBinary(tarPath, destDir string) (string, error) {
-	// This is a simplified version - in production you'd want proper tar extraction
-	// For now, we assume the binary will be extracted directly
-	// In a real implementation, you'd use archive/tar to extract the file
+	file, err := os.Open(tarPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open tar file: %w", err)
+	}
+	defer file.Close()
 
-	// Return the expected path of the extracted binary
-	return filepath.Join(destDir, "jean"), nil
+	gzipReader, err := gzip.NewReader(file)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gzipReader.Close()
+
+	tarReader := tar.NewReader(gzipReader)
+	var extractedPath string
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to read tar header: %w", err)
+		}
+
+		// Only extract the jean binary file
+		if header.Name == "jean" || filepath.Base(header.Name) == "jean" {
+			outPath := filepath.Join(destDir, "jean")
+			out, err := os.Create(outPath)
+			if err != nil {
+				return "", fmt.Errorf("failed to create output file: %w", err)
+			}
+
+			if _, err := io.Copy(out, tarReader); err != nil {
+				out.Close()
+				return "", fmt.Errorf("failed to extract binary: %w", err)
+			}
+			out.Close()
+
+			// Make the extracted binary executable
+			if err := os.Chmod(outPath, 0755); err != nil {
+				return "", fmt.Errorf("failed to make extracted binary executable: %w", err)
+			}
+
+			extractedPath = outPath
+			break
+		}
+	}
+
+	if extractedPath == "" {
+		return "", fmt.Errorf("jean binary not found in archive")
+	}
+
+	return extractedPath, nil
 }
 
 // copyFile copies a file from src to dst
@@ -261,4 +314,65 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// isWritable checks if a directory is writable
+func isWritable(dir string) bool {
+	_, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+
+	// Try to write a temporary file
+	tmpFile := filepath.Join(dir, ".write-test")
+	err = os.WriteFile(tmpFile, []byte("test"), 0644)
+	if err != nil {
+		return false
+	}
+	os.Remove(tmpFile)
+	return true
+}
+
+// renameFile renames a file, using sudo if necessary
+func renameFile(newPath, oldPath string, useSudo bool) error {
+	if !useSudo {
+		return os.Rename(oldPath, newPath)
+	}
+
+	// Use sudo mv command
+	cmd := exec.Command("sudo", "mv", oldPath, newPath)
+	return cmd.Run()
+}
+
+// copyFileTo copies a file, using sudo if necessary
+func copyFileTo(src, dst string, useSudo bool) error {
+	if !useSudo {
+		return copyFile(src, dst)
+	}
+
+	// Use sudo cp command
+	cmd := exec.Command("sudo", "cp", src, dst)
+	return cmd.Run()
+}
+
+// chmodFile changes file permissions, using sudo if necessary
+func chmodFile(path string, perm os.FileMode, useSudo bool) error {
+	if !useSudo {
+		return os.Chmod(path, perm)
+	}
+
+	// Use sudo chmod command
+	cmd := exec.Command("sudo", "chmod", fmt.Sprintf("%o", perm), path)
+	return cmd.Run()
+}
+
+// removeFile removes a file, using sudo if necessary
+func removeFile(path string, useSudo bool) error {
+	if !useSudo {
+		return os.Remove(path)
+	}
+
+	// Use sudo rm command
+	cmd := exec.Command("sudo", "rm", "-f", path)
+	return cmd.Run()
 }

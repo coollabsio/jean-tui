@@ -15,7 +15,24 @@ const (
 
 ## Your task
 
-Based on the above changes, create a single git commit with a proper Conventional Commits message and push to git. Never add that this commit is generated with claude code in the end.`
+Based on the above changes, generate a one-line conventional commit message following the Conventional Commits specification.
+
+Return ONLY the commit message text (no explanation, no markdown formatting, no extra text).
+
+Format: <type>: <description>
+
+Examples:
+- feat: add user authentication system
+- fix: resolve database connection timeout
+- refactor: simplify error handling logic
+- docs: update API documentation
+- chore: bump dependencies to latest versions
+
+Requirements:
+- Single line only
+- Start with type (feat, fix, refactor, docs, chore, style, test, perf, ci, build, revert)
+- Concise description in lowercase
+- No period at the end`
 
 	// DefaultBranchNamePrompt generates a semantic branch name from git diff
 	// The {diff} placeholder will be replaced with the actual git diff

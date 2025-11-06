@@ -39,11 +39,6 @@ type ChatResponse struct {
 	} `json:"error"`
 }
 
-type CommitMessage struct {
-	Subject string `json:"subject"`
-	Body    string `json:"body"`
-}
-
 type PRContent struct {
 	Title       string `json:"title"`
 	Description string `json:"description"`

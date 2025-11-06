@@ -182,14 +182,17 @@ func rebuildStyles(colors ThemeColors) {
 
 	// Panel styles
 	panelStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(colors.Border).
 		Padding(1, 2)
 
 	activePanelStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(colors.Primary).
 		Padding(1, 2)
+
+	panelSeparatorStyle = lipgloss.NewStyle().
+		Foreground(colors.Border)
 
 	titleStyle = lipgloss.NewStyle().
 		Foreground(colors.Primary).
@@ -236,7 +239,7 @@ func rebuildStyles(colors ThemeColors) {
 
 	// Modal styles
 	modalStyle = lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
+		Border(lipgloss.NormalBorder()).
 		BorderForeground(colors.Border).
 		Padding(1, 2).
 		Width(100)

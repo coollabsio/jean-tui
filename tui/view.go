@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/coollabsio/jean/config"
+	"github.com/coollabsio/jean/internal/version"
 )
 
 // View renders the TUI
@@ -353,8 +354,6 @@ func (m Model) renderNotificationOverlay(baseView, notification string) string {
 }
 
 func (m Model) renderMinimalHelpBar() string {
-	var b strings.Builder
-
 	keybindings := []string{
 		"↑/↓ nav",
 		"n/a/N new/existing/PR",
@@ -367,10 +366,31 @@ func (m Model) renderMinimalHelpBar() string {
 		"q quit",
 	}
 
-	helpText := strings.Join(keybindings, " • ")
-	b.WriteString(helpStyle.Render(helpText))
+	// Left side: keybindings
+	leftText := helpStyle.Render(strings.Join(keybindings, " • "))
 
-	return b.String()
+	// Right side: version
+	versionText := helpStyle.Copy().
+		Foreground(mutedColor).
+		Render(fmt.Sprintf("jean v%s", version.CliVersion))
+
+	// Calculate spacing to position version at the right
+	leftWidth := lipgloss.Width(leftText)
+	rightWidth := lipgloss.Width(versionText)
+	spacing := m.width - leftWidth - rightWidth
+
+	// Ensure at least 1 space
+	if spacing < 1 {
+		spacing = 1
+	}
+
+	// Join with spacing
+	return lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		leftText,
+		strings.Repeat(" ", spacing),
+		versionText,
+	)
 }
 
 func (m Model) renderModal() string {
@@ -489,8 +509,8 @@ func (m Model) renderCreateWithNameModal() string {
 	b.WriteString(modalTitleStyle.Render("Create New Worktree"))
 	b.WriteString("\n\n")
 
-	// Session name input (pre-filled with random name)
-	b.WriteString(inputLabelStyle.Render("Session Name:"))
+	// Session name input (starts empty)
+	b.WriteString(inputLabelStyle.Render("Branch Name:"))
 	b.WriteString("\n")
 
 	// Show focused or unfocused input
@@ -505,24 +525,32 @@ func (m Model) renderCreateWithNameModal() string {
 		b.WriteString(detailValueStyle.Render(inputValue))
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("(customize the name or use the default)"))
+	b.WriteString(helpStyle.Render("(leave empty for random name, or type a custom name)"))
 	b.WriteString("\n\n")
 
 	// Show info about what will be created
 	sessionName := m.sessionNameInput.Value()
-	sanitizedName := m.sessionManager.SanitizeBranchName(sessionName)
 
 	b.WriteString(helpStyle.Render(fmt.Sprintf("Will create:")))
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render(fmt.Sprintf("  Branch: %s", sanitizedName)))
+
+	if sessionName == "" {
+		// Empty input - will generate random name
+		b.WriteString(helpStyle.Render(fmt.Sprintf("  Branch: <random name will be generated>")))
+	} else {
+		// Custom name provided
+		sanitizedName := m.sessionManager.SanitizeBranchName(sessionName)
+		b.WriteString(helpStyle.Render(fmt.Sprintf("  Branch: %s", sanitizedName)))
+
+		// Show sanitization notice if name was changed
+		if sanitizedName != sessionName {
+			b.WriteString("\n")
+			b.WriteString(helpStyle.Render(fmt.Sprintf("  (sanitized from '%s')", sessionName)))
+		}
+	}
+
 	b.WriteString("\n")
 	b.WriteString(helpStyle.Render(fmt.Sprintf("  Claude will automatically continue previous conversations")))
-
-	// Show sanitization notice if name was changed
-	if sanitizedName != sessionName && sessionName != "" {
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render(fmt.Sprintf("  (sanitized from '%s')", sessionName)))
-	}
 	b.WriteString("\n\n")
 
 	// Buttons (Create and Cancel)

@@ -1421,16 +1421,10 @@ func (m Model) handleMainInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "n":
 		// Open create with custom name modal
-		randomName, err := m.gitManager.GenerateRandomName()
-		if err != nil {
-			cmd = m.showWarningNotification("Failed to generate random name")
-			return m, cmd
-		}
-
 		m.modal = createWithNameModal
-		m.sessionNameInput.SetValue(randomName)
-		m.sessionNameInput.Blur()
-		m.modalFocused = 1  // Set create button as default focus
+		m.sessionNameInput.SetValue("")  // Start with empty input
+		m.sessionNameInput.Focus()       // Focus the input field
+		m.modalFocused = 0               // Focus on input field
 		return m, nil
 
 	case "b":
@@ -2181,9 +2175,15 @@ func (m Model) handleCreateWithNameModalInput(msg tea.KeyMsg) (tea.Model, tea.Cm
 		} else if m.modalFocused == 1 {
 			// Create button
 			sessionName := m.sessionNameInput.Value()
+
+			// If empty, generate a random name
 			if sessionName == "" {
-				cmd := m.showWarningNotification("Session name cannot be empty")
-				return m, cmd
+				randomName, err := m.gitManager.GenerateRandomName()
+				if err != nil {
+					cmd := m.showWarningNotification("Failed to generate random name")
+					return m, cmd
+				}
+				sessionName = randomName
 			}
 
 			// Sanitize the session name to ensure it's a valid branch name

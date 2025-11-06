@@ -24,6 +24,7 @@ var (
 	// Panel styles
 	panelStyle       lipgloss.Style
 	activePanelStyle lipgloss.Style
+	panelSeparatorStyle lipgloss.Style
 
 	titleStyle lipgloss.Style
 

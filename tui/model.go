@@ -290,7 +290,7 @@ func NewModel(repoPath string, autoClaude bool) Model {
 	searchInput.Width = 50
 
 	sessionNameInput := textinput.New()
-	sessionNameInput.Placeholder = "Session name (e.g., my-feature)"
+	sessionNameInput.Placeholder = "Leave empty for random name (e.g., happy-panda-42)"
 	sessionNameInput.CharLimit = 100
 	sessionNameInput.Width = 50
 

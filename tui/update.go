@@ -430,24 +430,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.prRetryDescription = ""
 
 			m.debugLog(fmt.Sprintf("PR created successfully: %s", msg.prURL))
-			// Find the worktree branch for this PR
-			var prBranch string
-			for _, wt := range m.worktrees {
-				if wt.Path == msg.prURL || len(m.worktrees) == 1 {
-					// Try to find the worktree by comparing with current selection
-					if sel := m.selectedWorktree(); sel != nil && sel.Path == wt.Path {
-						prBranch = wt.Branch
-						break
-					}
-				}
-			}
-
-			// If we have a selected worktree, use its branch
-			if prBranch == "" {
-				if sel := m.selectedWorktree(); sel != nil {
-					prBranch = sel.Branch
-				}
-			}
+			// Use the branch from the message (the one we actually created the PR for)
+			// This prevents race conditions where the user navigates to a different worktree
+			// while the PR is being created
+			prBranch := msg.branch
 
 			m.debugLog(fmt.Sprintf("Saving PR for branch: %s, title: %s", prBranch, msg.prTitle))
 			// Save PR to config

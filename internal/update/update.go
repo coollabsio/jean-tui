@@ -77,14 +77,14 @@ func UpdateJean(currentVersion string) error {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
 
-	fmt.Printf("Updating jean from %s to %s...\n", currentVersion, latestRelease.TagName)
+	fmt.Printf("Updating jean from %s to %s...\n", currentVersion, releaseVersion)
 
 	// Download and install the new binary
 	if err := downloadAndInstall(ctx, latestRelease, exe); err != nil {
 		return err
 	}
 
-	fmt.Printf("✓ Successfully updated to %s\n", latestRelease.TagName)
+	fmt.Printf("✓ Successfully updated to %s\n", releaseVersion)
 	return nil
 }
 
